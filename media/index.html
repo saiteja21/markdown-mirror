@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Markdown Mirror</title>
+  <link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+  <div class="shell">
+    <aside class="explorer" aria-label="Markdown files">
+      <header class="pane-header">Explorer</header>
+      <div id="tree" class="tree"></div>
+    </aside>
+    <main class="viewer" aria-label="Rendered markdown">
+      <header class="pane-header">
+        <span id="doc-title">Select a markdown file</span>
+        <span id="status" class="status">Disconnected</span>
+      </header>
+      <article id="content" class="content"></article>
+    </main>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

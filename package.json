@@ -1,0 +1,103 @@
+{
+  "name": "markdown-mirror",
+  "displayName": "Markdown Mirror",
+  "description": "Mirror workspace Markdown files into a live local web server with HDR updates.",
+  "version": "0.1.0",
+  "publisher": "ForkedCode",
+  "icon": "logo.png",
+  "galleryBanner": {
+    "color": "#1f2937",
+    "theme": "dark"
+  },
+  "license": "MIT",
+  "keywords": [
+    "markdown",
+    "preview",
+    "live",
+    "websocket",
+    "documentation"
+  ],
+  "engines": {
+    "vscode": "^1.98.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onStartupFinished",
+    "workspaceContains:**/*.md",
+    "onCommand:markdownMirror.start",
+    "onCommand:markdownMirror.stop"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "markdownMirror.start",
+        "title": "Markdown Mirror: Start"
+      },
+      {
+        "command": "markdownMirror.stop",
+        "title": "Markdown Mirror: Stop"
+      }
+    ],
+    "configuration": {
+      "title": "Markdown Mirror",
+      "properties": {
+        "markdownMirror.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start Markdown Mirror when VS Code starts and a markdown workspace is open."
+        },
+        "markdownMirror.autoOpenMode": {
+          "type": "string",
+          "enum": [
+            "always",
+            "firstRun",
+            "never"
+          ],
+          "default": "firstRun",
+          "markdownEnumDescriptions": [
+            "Open browser every time Markdown Mirror auto-starts.",
+            "Open browser only the first time Markdown Mirror auto-starts on this machine.",
+            "Never open browser automatically."
+          ],
+          "description": "Controls browser auto-open behavior during auto-start. Manual Start always opens the browser."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\"",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "build": "npm run clean && node ./scripts/esbuild.mjs",
+    "package": "npm run build && npx @vscode/vsce package",
+    "publish": "npm run build && npx @vscode/vsce publish"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.1.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.5.0",
+    "@types/express": "^4.17.21",
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^20.17.24",
+    "@types/vscode": "^1.98.0",
+    "@types/ws": "^8.5.14",
+    "esbuild": "^0.25.3",
+    "typescript": "^5.8.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saiteja21/markdown-mirror"
+  },
+  "bugs": {
+    "url": "https://github.com/saiteja21/markdown-mirror/issues"
+  },
+  "homepage": "https://github.com/saiteja21/markdown-mirror#readme"
+}

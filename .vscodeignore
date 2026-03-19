@@ -1,0 +1,10 @@
+.vscode/**
+.git/**
+.github/**
+src/**
+scripts/**
+node_modules/**
+*.tsbuildinfo
+tsconfig.json
+vsc-extension-quickstart.md
+!CHANGELOG.md
