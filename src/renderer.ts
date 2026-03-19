@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
+import sanitizeHtml from "sanitize-html";
 
 export interface RenderRequest {
   markdown: string;
@@ -10,6 +11,7 @@ export interface RenderRequest {
 
 export class MarkdownRenderer implements vscode.Disposable {
   private readonly md: MarkdownIt;
+  private readonly defaultFenceRule: (...args: any[]) => string;
 
   public constructor() {
     this.md = new MarkdownIt({
@@ -26,6 +28,22 @@ export class MarkdownRenderer implements vscode.Disposable {
         return `<pre><code class="hljs">${escaped}</code></pre>`;
       }
     });
+
+    this.defaultFenceRule = this.md.renderer.rules.fence ?? ((tokens, idx, options, _env, self) => {
+      return self.renderToken(tokens, idx, options);
+    });
+
+    this.md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+      const token = tokens[idx];
+      const info = (token.info || "").trim();
+      const language = info.split(/\s+/g)[0]?.toLowerCase() ?? "";
+      if (language === "mermaid" && this.isMermaidEnabled()) {
+        const diagram = this.md.utils.escapeHtml(token.content);
+        return `<div class="mermaid">${diagram}</div>`;
+      }
+
+      return this.defaultFenceRule(tokens, idx, options, env, self);
+    };
   }
 
   public render(request: RenderRequest): string {
@@ -36,7 +54,8 @@ export class MarkdownRenderer implements vscode.Disposable {
 
     const tokens = this.md.parse(request.markdown, env);
     this.rewriteImageSources(tokens, request.documentUri, request.assetBaseUrl);
-    return this.md.renderer.render(tokens, this.md.options, env);
+    const rawHtml = this.md.renderer.render(tokens, this.md.options, env);
+    return this.applyHtmlMode(rawHtml);
   }
 
   public dispose(): void {
@@ -84,5 +103,49 @@ export class MarkdownRenderer implements vscode.Disposable {
     }
 
     return true;
+  }
+
+  private isMermaidEnabled(): boolean {
+    return vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enableMermaid", true);
+  }
+
+  private applyHtmlMode(html: string): string {
+    const mode = vscode.workspace.getConfiguration("markdownMirror").get<string>("htmlMode", "safe");
+    if (mode === "trusted") {
+      return html;
+    }
+
+    return sanitizeHtml(html, {
+      allowedTags: sanitizeHtml.defaults.allowedTags.concat([
+        "img",
+        "h1",
+        "h2",
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+        "pre",
+        "code",
+        "span",
+        "div",
+        "details",
+        "summary"
+      ]),
+      allowedAttributes: {
+        ...sanitizeHtml.defaults.allowedAttributes,
+        "*": ["class", "id", "title", "aria-label"],
+        a: ["href", "name", "target", "rel"],
+        img: ["src", "alt", "title", "width", "height"],
+        code: ["class"],
+        div: ["class"],
+        span: ["class"]
+      },
+      allowedSchemes: ["http", "https", "mailto", "data"],
+      transformTags: {
+        a: sanitizeHtml.simpleTransform("a", { rel: "noopener noreferrer" }, true)
+      }
+    });
   }
 }

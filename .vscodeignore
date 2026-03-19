@@ -6,5 +6,5 @@ scripts/**
 node_modules/**
 *.tsbuildinfo
 tsconfig.json
-vsc-extension-quickstart.md
+docs/maintainers/**
 !CHANGELOG.md

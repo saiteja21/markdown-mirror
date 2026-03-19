@@ -210,20 +210,27 @@ export class MirrorServer implements vscode.Disposable {
 
   private async buildWorkspaceTree(): Promise<WorkspaceTreeNode[]> {
     const folders = vscode.workspace.workspaceFolders ?? [];
+    const rootPathSetting = this.getRootPathSetting();
+
+    const rootCandidates = await Promise.all(folders.map(async (folder) => {
+      return this.resolveTreeRoot(folder, rootPathSetting);
+    }));
 
     const roots = await Promise.all(
-      folders.map(async (folder) => {
-        const children = await this.readDirectory(folder.uri, "");
-        return {
-          name: folder.name,
-          kind: "folder" as const,
-          relativePath: "",
-          children
-        };
-      })
+      rootCandidates
+        .filter((candidate): candidate is { folderName: string; rootUri: vscode.Uri; relativeBase: string } => !!candidate)
+        .map(async (candidate) => {
+          const children = await this.readDirectory(candidate.rootUri, candidate.relativeBase);
+          return {
+            name: candidate.folderName,
+            kind: "folder" as const,
+            relativePath: candidate.relativeBase,
+            children
+          };
+        })
     );
 
-    return roots;
+    return roots.filter((root) => (root.children?.length ?? 0) > 0);
   }
 
   private async readDirectory(directoryUri: vscode.Uri, relativeBase: string): Promise<WorkspaceTreeNode[]> {
@@ -265,6 +272,46 @@ export class MirrorServer implements vscode.Disposable {
     }
 
     return nodes;
+  }
+
+  private getRootPathSetting(): string {
+    const value = vscode.workspace.getConfiguration("markdownMirror").get<string>("rootPath", "");
+    return (value || "").trim().replace(/\\/g, "/");
+  }
+
+  private async resolveTreeRoot(
+    folder: vscode.WorkspaceFolder,
+    rootPathSetting: string
+  ): Promise<{ folderName: string; rootUri: vscode.Uri; relativeBase: string } | undefined> {
+    if (!rootPathSetting) {
+      return {
+        folderName: folder.name,
+        rootUri: folder.uri,
+        relativeBase: ""
+      };
+    }
+
+    const normalizedSegments = rootPathSetting.split("/").filter((segment) => segment.length > 0);
+    const hasTraversal = normalizedSegments.some((segment) => segment === ".." || segment === ".");
+    if (hasTraversal || rootPathSetting.startsWith("/") || /^[a-zA-Z]:/.test(rootPathSetting)) {
+      return undefined;
+    }
+
+    const scopedUri = vscode.Uri.joinPath(folder.uri, ...normalizedSegments);
+    try {
+      const stat = await vscode.workspace.fs.stat(scopedUri);
+      if (stat.type !== vscode.FileType.Directory) {
+        return undefined;
+      }
+
+      return {
+        folderName: `${folder.name}/${rootPathSetting}`,
+        rootUri: scopedUri,
+        relativeBase: rootPathSetting
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   private isPathInside(candidatePath: string, rootPath: string): boolean {

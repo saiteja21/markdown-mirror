@@ -4,22 +4,106 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Markdown Mirror</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css" />
   <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
-  <div class="shell">
-    <aside class="explorer" aria-label="Markdown files">
-      <header class="pane-header">Explorer</header>
-      <div id="tree" class="tree"></div>
+  <div id="app-shell" class="app-shell">
+    <aside id="left-panel" class="sidebar panel-region" aria-label="File explorer panel">
+      <div class="sidebar-header">
+        <div class="sidebar-header-row">
+          <div class="brand">
+            <svg class="brand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <line x1="10" y1="9" x2="8" y2="9"/>
+            </svg>
+            <span class="brand-name">Markdown Mirror</span>
+          </div>
+          <button id="left-panel-toggle" class="panel-toggle-btn" type="button" aria-pressed="true" title="Collapse explorer panel">◀</button>
+        </div>
+
+        <div class="search-box">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input type="text" id="search" class="search-input" placeholder="Search files..." autocomplete="off" />
+        </div>
+
+        <div class="tree-controls" aria-label="File tree controls">
+          <button id="tree-expand-all" class="tree-control-btn" type="button" title="Expand all folders">Expand All</button>
+          <button id="tree-collapse-all" class="tree-control-btn" type="button" title="Collapse all folders">Collapse All</button>
+        </div>
+      </div>
+      <nav id="tree" class="file-tree" aria-label="File tree"></nav>
+      <div class="sidebar-footer">
+        <span id="status" class="status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-text">Disconnected</span>
+        </span>
+      </div>
     </aside>
-    <main class="viewer" aria-label="Rendered markdown">
-      <header class="pane-header">
-        <span id="doc-title">Select a markdown file</span>
-        <span id="status" class="status">Disconnected</span>
+
+    <div
+      id="left-resizer"
+      class="panel-resizer"
+      role="separator"
+      aria-label="Resize explorer panel"
+      aria-orientation="vertical"
+      tabindex="0"
+    ></div>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div id="breadcrumb" class="breadcrumb">
+          <span class="breadcrumb-text">Select a file to preview</span>
+        </div>
+        <div class="topbar-actions">
+          <button id="compare-toggle" class="topbar-btn" type="button" aria-pressed="false">Compare</button>
+          <button id="toc-toggle" class="topbar-btn" type="button" aria-pressed="false">TOC</button>
+          <button id="theme-toggle" class="topbar-btn" type="button" aria-pressed="false">Dark</button>
+          <button id="width-toggle" class="topbar-btn" type="button" aria-pressed="false">Reading Width</button>
+        </div>
       </header>
-      <article id="content" class="content"></article>
+
+      <section id="workarea" class="workarea">
+        <section id="viewer-layout" class="viewer-layout" aria-label="Markdown viewer panes">
+          <section id="pane-primary" class="viewer-pane is-active" data-pane="primary" aria-label="Primary document">
+            <header class="pane-meta">Primary</header>
+            <article id="content-primary" class="document-content"></article>
+          </section>
+          <section id="pane-secondary" class="viewer-pane" data-pane="secondary" aria-label="Secondary document">
+            <header class="pane-meta">Secondary</header>
+            <article id="content-secondary" class="document-content"></article>
+          </section>
+        </section>
+
+        <div
+          id="right-resizer"
+          class="panel-resizer"
+          role="separator"
+          aria-label="Resize table of contents panel"
+          aria-orientation="vertical"
+          tabindex="0"
+        ></div>
+
+        <aside id="toc-panel" class="toc-panel panel-region" aria-label="Table of contents panel">
+          <header class="toc-header">
+            <span>Table of Contents</span>
+            <button id="right-panel-toggle" class="panel-toggle-btn panel-toggle-light" type="button" aria-pressed="true" title="Collapse table of contents panel">▶</button>
+          </header>
+          <nav id="toc-list" class="toc-list"></nav>
+        </aside>
+      </section>
     </main>
+
+    <button id="left-panel-reopen" class="panel-reopen-btn panel-reopen-left" type="button" title="Open explorer panel" aria-label="Open explorer panel">▶ Explorer</button>
+    <button id="right-panel-reopen" class="panel-reopen-btn panel-reopen-right" type="button" title="Open table of contents panel" aria-label="Open table of contents panel">◀ TOC</button>
   </div>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script src="/app.js" defer></script>
 </body>
 </html>
