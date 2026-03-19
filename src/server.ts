@@ -1,4 +1,5 @@
 import * as http from "http";
+import * as fs from "fs/promises";
 import * as path from "path";
 import express from "express";
 import * as vscode from "vscode";
@@ -46,6 +47,8 @@ export class MirrorServer implements vscode.Disposable {
         };
       }
     }
+
+    await this.assertWebRootIsValid();
 
     this.httpServer = await new Promise<http.Server>((resolve, reject) => {
       const server = this.app.listen(0, this.host, () => resolve(server));
@@ -105,6 +108,10 @@ export class MirrorServer implements vscode.Disposable {
     });
 
     this.app.use(express.static(this.webRootPath, { index: "index.html" }));
+
+    this.app.get("/", (_req, res) => {
+      res.sendFile(path.join(this.webRootPath, "index.html"));
+    });
 
     this.app.get("/api/tree", async (_req, res) => {
       try {
@@ -275,6 +282,19 @@ export class MirrorServer implements vscode.Disposable {
   }
 
   private isLoopbackClient(remoteAddress: string): boolean {
-    return remoteAddress === "127.0.0.1" || remoteAddress === "::ffff:127.0.0.1";
+    return remoteAddress === "127.0.0.1" || remoteAddress === "::1" || remoteAddress === "::ffff:127.0.0.1";
+  }
+
+  private async assertWebRootIsValid(): Promise<void> {
+    const indexPath = path.join(this.webRootPath, "index.html");
+    try {
+      const stat = await fs.stat(indexPath);
+      if (!stat.isFile()) {
+        throw new Error("index.html is not a regular file");
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown reason";
+      throw new Error(`Invalid web root: ${this.webRootPath}. Missing index.html (${reason}).`);
+    }
   }
 }

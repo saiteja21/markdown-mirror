@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { MirrorServer } from "./server";
 import { MarkdownWatcher } from "./watcher";
 import { MarkdownRenderer } from "./renderer";
@@ -8,8 +9,13 @@ const FIRST_RUN_OPENED_KEY = "markdownMirror.firstRunBrowserOpened";
 
 class MirrorRuntime implements vscode.Disposable {
   private readonly renderer = new MarkdownRenderer();
-  private readonly server = new MirrorServer(this.renderer);
+  private readonly server: MirrorServer;
   private watcher: MarkdownWatcher | undefined;
+
+  public constructor(extensionPath: string) {
+    const mediaPath = path.join(extensionPath, "media");
+    this.server = new MirrorServer(this.renderer, "127.0.0.1", mediaPath);
+  }
 
   public async start(): Promise<string> {
     const serverInfo = await this.server.start();
@@ -35,7 +41,7 @@ class MirrorRuntime implements vscode.Disposable {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-  const runtime = new MirrorRuntime();
+  const runtime = new MirrorRuntime(context.extensionPath);
   const getAutoOpenMode = (): AutoOpenMode => {
     return vscode.workspace.getConfiguration("markdownMirror").get<AutoOpenMode>("autoOpenMode", "firstRun");
   };

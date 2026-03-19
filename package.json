@@ -2,7 +2,7 @@
   "name": "markdown-mirror",
   "displayName": "Markdown Mirror",
   "description": "Mirror workspace Markdown files into a live local web server with HDR updates.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "ForkedCode",
   "icon": "logo.png",
   "galleryBanner": {
