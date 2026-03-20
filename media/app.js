@@ -41,6 +41,28 @@ const state = {
   shortcutsModalOpen: false,
   pinnedUris: new Set(),
   favoritesCollapsed: false,
+  editedUris: new Set(),
+  changedLineByUri: new Map(),
+  recentEditLineByPane: {
+    primary: 0,
+    secondary: 0
+  },
+  recentEditSetAtByPane: {
+    primary: 0,
+    secondary: 0
+  },
+  suppressReadClearUntilByPane: {
+    primary: 0,
+    secondary: 0
+  },
+  paneRenderVersion: {
+    primary: 0,
+    secondary: 0
+  },
+  lastUpdatedAtByPane: {
+    primary: 0,
+    secondary: 0
+  },
   openTabs: [],
   slideMode: {
     active: false,
@@ -118,6 +140,8 @@ const favoritesPanelEl = document.getElementById("favorites-panel");
 const favoritesToggleEl = document.getElementById("favorites-toggle");
 const favoritesTreeEl = document.getElementById("favorites-tree");
 const fileCountEl = document.getElementById("file-count");
+const liveUpdatingEl = document.getElementById("live-updating");
+const lastUpdatedEl = document.getElementById("last-updated");
 const backToTopEl = document.getElementById("back-to-top");
 const lightboxEl = document.getElementById("lightbox");
 const lightboxImageEl = document.getElementById("lightbox-image");
@@ -149,6 +173,12 @@ const paneContentElements = {
 };
 
 let activeDrag = null;
+let liveUpdatingHideTimer = null;
+
+const syncMode = {
+  editorToBrowser: false,
+  browserToEditor: false
+};
 
 void bootstrap();
 
@@ -210,6 +240,7 @@ async function bootstrap() {
   setupBackToTop();
   setupLightbox();
   setupScrollSync();
+  startLastUpdatedTicker();
   setupKeyboardShortcuts();
   setupWidthModeToggle();
   setupThemeToggle();
@@ -870,6 +901,8 @@ function setupBackToTop() {
 
   paneContentElements.primary.addEventListener("scroll", handleActivePaneScrollUi);
   paneContentElements.secondary.addEventListener("scroll", handleActivePaneScrollUi);
+  paneContentElements.primary.addEventListener("click", createPaneReadHandler("primary"));
+  paneContentElements.secondary.addEventListener("click", createPaneReadHandler("secondary"));
 }
 
 function handleActivePaneScrollUi(event) {
@@ -883,6 +916,42 @@ function handleActivePaneScrollUi(event) {
   }
 
   backToTopEl.classList.toggle("visible", content.scrollTop > 500);
+
+  if (event.target === paneContentElements.primary) {
+    clearRecentEditHighlightForPane("primary");
+  } else if (event.target === paneContentElements.secondary) {
+    clearRecentEditHighlightForPane("secondary");
+  }
+}
+
+function createPaneReadHandler(pane) {
+  return function () {
+    clearRecentEditHighlightForPane(pane);
+  };
+}
+
+function clearRecentEditHighlightForPane(pane) {
+  if (!pane || !state.recentEditLineByPane || !state.recentEditLineByPane[pane]) {
+    return;
+  }
+
+  var now = Date.now();
+  var suppressUntil = state.suppressReadClearUntilByPane[pane] || 0;
+  if (now < suppressUntil) {
+    return;
+  }
+
+  var setAt = state.recentEditSetAtByPane[pane] || 0;
+  if (setAt > 0 && (now - setAt) < 1600) {
+    return;
+  }
+
+  state.recentEditLineByPane[pane] = 0;
+  state.recentEditSetAtByPane[pane] = 0;
+  state.suppressReadClearUntilByPane[pane] = 0;
+  if (pane === state.activePane) {
+    rebuildTocForActivePane();
+  }
 }
 
 function setupLightbox() {
@@ -916,6 +985,10 @@ function setLightboxOpen(open, src) {
 }
 
 function setupScrollSync() {
+  if (!syncMode.browserToEditor) {
+    return;
+  }
+
   paneContentElements.primary.addEventListener("scroll", createScrollSyncHandler("primary"));
   paneContentElements.secondary.addEventListener("scroll", createScrollSyncHandler("secondary"));
 }
@@ -930,6 +1003,10 @@ function createScrollSyncHandler(pane) {
     lastSent = now;
 
     if (Date.now() < state.sync.suppressEditorSyncUntil) {
+      return;
+    }
+
+    if (!syncMode.browserToEditor) {
       return;
     }
 
@@ -1476,6 +1553,9 @@ function appendNodes(container, nodes, parentPath, query) {
     if (state.pinnedUris.has(node.uri)) {
       button.classList.add("is-pinned");
     }
+    if (state.editedUris.has(node.uri)) {
+      button.classList.add("is-edited");
+    }
     button.type = "button";
     button.innerHTML =
       '<svg class="tree-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>' +
@@ -1595,6 +1675,9 @@ function renderFavorites() {
 
     var button = document.createElement("button");
     button.className = "tree-file is-pinned";
+    if (state.editedUris.has(uri)) {
+      button.classList.add("is-edited");
+    }
     button.type = "button";
     button.dataset.uri = uri;
     button.innerHTML =
@@ -1688,7 +1771,12 @@ async function openDocument(uri, relativePath, pane) {
 
   var startedAt = performance.now();
   var targetPane = pane || "primary";
+  var requestVersion = bumpPaneRenderVersion(targetPane);
   var response = await fetch("/api/document?uri=" + encodeURIComponent(uri));
+  if (!isPaneRenderVersionCurrent(targetPane, requestVersion)) {
+    return;
+  }
+
   if (!response.ok) {
     paneContentElements[targetPane].innerHTML = '<p class="placeholder-note">Unable to load document.</p>';
     return;
@@ -1697,15 +1785,39 @@ async function openDocument(uri, relativePath, pane) {
   var payload = await response.json();
   state.selectedUriByPane[targetPane] = payload.uri;
   state.selectedPathByPane[targetPane] = relativePath || payload.relativePath || "Untitled";
+  state.lastUpdatedAtByPane[targetPane] = Date.now();
   rememberTab(payload.uri, state.selectedPathByPane[targetPane]);
 
   paneContentElements[targetPane].innerHTML = payload.html || "";
   paneContentElements[targetPane].scrollTop = 0;
 
   await postRenderEnhancements(paneContentElements[targetPane], targetPane, { heavy: true });
+  if (!isPaneRenderVersionCurrent(targetPane, requestVersion)) {
+    return;
+  }
+
+  var changedLine = state.changedLineByUri.get(payload.uri);
+  if (changedLine) {
+    state.recentEditLineByPane[targetPane] = changedLine;
+    state.recentEditSetAtByPane[targetPane] = Date.now();
+    state.suppressReadClearUntilByPane[targetPane] = Date.now() + 1000;
+    scrollToSourceLine(paneContentElements[targetPane], changedLine);
+    state.changedLineByUri.delete(payload.uri);
+  } else {
+    state.recentEditLineByPane[targetPane] = 0;
+    state.recentEditSetAtByPane[targetPane] = 0;
+    state.suppressReadClearUntilByPane[targetPane] = 0;
+  }
+
+  var wasEdited = state.editedUris.has(payload.uri);
+  state.editedUris.delete(payload.uri);
+  if (wasEdited) {
+    renderTree();
+  }
   refreshSelection();
   updateBreadcrumb();
   updateDocumentStats();
+  updateLastUpdatedLabel();
 
   if (targetPane === state.activePane) {
     rebuildTocForActivePane();
@@ -1881,6 +1993,21 @@ function extractFileName(pathValue) {
   return parts[parts.length - 1] || pathValue;
 }
 
+function getHeadingLabelText(heading, fallbackText) {
+  if (!heading) {
+    return fallbackText || "Section";
+  }
+
+  var clone = heading.cloneNode(true);
+  var anchors = clone.querySelectorAll(".heading-anchor");
+  for (var i = 0; i < anchors.length; i++) {
+    anchors[i].remove();
+  }
+
+  var text = clone.textContent ? clone.textContent.trim() : "";
+  return text || fallbackText || "Section";
+}
+
 function rebuildTocForActivePane() {
   if (state.panelPrefs.rightCollapsed) {
     return;
@@ -1896,9 +2023,10 @@ function rebuildTocForActivePane() {
   }
 
   var usedIds = new Set();
+  var recentLine = state.recentEditLineByPane[state.activePane] || 0;
   for (var i = 0; i < headings.length; i++) {
     var heading = headings[i];
-    var text = heading.textContent ? heading.textContent.trim() : "Section";
+    var text = getHeadingLabelText(heading, "Section");
     var level = parseInt(heading.tagName.slice(1), 10);
 
     var id = heading.id || slugify(text);
@@ -1919,6 +2047,10 @@ function rebuildTocForActivePane() {
     var button = document.createElement("button");
     button.type = "button";
     button.className = "toc-item depth-" + Math.min(level, 3);
+    var sourceLine = Number(heading.getAttribute("data-source-line") || "0");
+    if (recentLine > 0 && sourceLine > 0 && Math.abs(sourceLine - recentLine) <= 3) {
+      button.classList.add("toc-item-edited");
+    }
     button.textContent = text;
     button.addEventListener("click", createTocJumpHandler(contentEl, uniqueId));
     tocListEl.appendChild(button);
@@ -1976,11 +2108,12 @@ function connectSocket() {
     }
 
     if (message.type === "document-updated" && typeof message.html === "string") {
-      void updatePaneIfMatching("primary", message.uri, message.html, message.reason);
-      void updatePaneIfMatching("secondary", message.uri, message.html, message.reason);
+      markUriAsEdited(message.uri, message.changedLine);
+      void updatePaneIfMatching("primary", message.uri, message.html, message.reason, message.changedLine);
+      void updatePaneIfMatching("secondary", message.uri, message.html, message.reason, message.changedLine);
     }
 
-    if (message.type === "viewport-updated") {
+    if (syncMode.editorToBrowser && message.type === "viewport-updated") {
       applyEditorViewportSync("primary", message);
       applyEditorViewportSync("secondary", message);
     }
@@ -1989,6 +2122,22 @@ function connectSocket() {
       void handleRuntimeSettingsUpdated();
     }
   });
+}
+
+function markUriAsEdited(uri, changedLine) {
+  if (!uri) {
+    return;
+  }
+
+  var wasEdited = state.editedUris.has(uri);
+  state.editedUris.add(uri);
+  if (typeof changedLine === "number" && changedLine > 0) {
+    state.changedLineByUri.set(uri, changedLine);
+  }
+
+  if (!wasEdited) {
+    renderTree();
+  }
 }
 
 async function handleRuntimeSettingsUpdated() {
@@ -2060,18 +2209,128 @@ function clearPaneIfDeleted(pane, uri) {
   renderTabs();
 }
 
-async function updatePaneIfMatching(pane, uri, html, reason) {
+async function updatePaneIfMatching(pane, uri, html, reason, changedLine) {
   if (state.selectedUriByPane[pane] !== uri) {
     return;
   }
 
+  var requestVersion = bumpPaneRenderVersion(pane);
+
+  if (reason === "typed") {
+    showLiveUpdatingPulse();
+  }
+
   paneContentElements[pane].innerHTML = html;
+  state.lastUpdatedAtByPane[pane] = Date.now();
+  if (typeof changedLine === "number" && changedLine > 0) {
+    state.recentEditLineByPane[pane] = changedLine;
+    state.recentEditSetAtByPane[pane] = Date.now();
+    state.suppressReadClearUntilByPane[pane] = Date.now() + 600;
+  } else {
+    state.recentEditLineByPane[pane] = 0;
+    state.recentEditSetAtByPane[pane] = 0;
+    state.suppressReadClearUntilByPane[pane] = 0;
+  }
   var heavyEnhancements = reason !== "typed";
   await postRenderEnhancements(paneContentElements[pane], pane, { heavy: heavyEnhancements });
+  if (!isPaneRenderVersionCurrent(pane, requestVersion)) {
+    return;
+  }
 
   if (pane === state.activePane) {
     rebuildTocForActivePane();
     updateDocumentStats();
+    updateLastUpdatedLabel();
+  }
+
+  if (state.editedUris.has(uri)) {
+    state.editedUris.delete(uri);
+    renderTree();
+  }
+}
+
+function showLiveUpdatingPulse() {
+  if (!liveUpdatingEl) {
+    return;
+  }
+
+  liveUpdatingEl.hidden = false;
+  if (liveUpdatingHideTimer) {
+    clearTimeout(liveUpdatingHideTimer);
+  }
+
+  liveUpdatingHideTimer = setTimeout(function () {
+    liveUpdatingEl.hidden = true;
+    liveUpdatingHideTimer = null;
+  }, 1400);
+}
+
+function bumpPaneRenderVersion(pane) {
+  if (!pane || !state.paneRenderVersion || !Object.prototype.hasOwnProperty.call(state.paneRenderVersion, pane)) {
+    return 0;
+  }
+
+  state.paneRenderVersion[pane] += 1;
+  return state.paneRenderVersion[pane];
+}
+
+function isPaneRenderVersionCurrent(pane, version) {
+  if (!pane || !state.paneRenderVersion || !Object.prototype.hasOwnProperty.call(state.paneRenderVersion, pane)) {
+    return false;
+  }
+
+  return state.paneRenderVersion[pane] === version;
+}
+
+function startLastUpdatedTicker() {
+  updateLastUpdatedLabel();
+  setInterval(updateLastUpdatedLabel, 1000);
+}
+
+function updateLastUpdatedLabel() {
+  if (!lastUpdatedEl) {
+    return;
+  }
+
+  var activePane = state.activePane || "primary";
+  var ts = state.lastUpdatedAtByPane[activePane] || 0;
+  if (!ts) {
+    lastUpdatedEl.textContent = "Last updated: --";
+    return;
+  }
+
+  var deltaSeconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  lastUpdatedEl.textContent = deltaSeconds <= 1 ? "Last updated: just now" : "Last updated: " + String(deltaSeconds) + "s ago";
+}
+
+function scrollToSourceLine(container, line) {
+  if (!container || !line) {
+    return;
+  }
+
+  var candidates = container.querySelectorAll("[data-source-line]");
+  if (!candidates || candidates.length === 0) {
+    return;
+  }
+
+  var target = null;
+  var bestDistance = Number.MAX_SAFE_INTEGER;
+  for (var i = 0; i < candidates.length; i++) {
+    var node = candidates[i];
+    var sourceLine = Number(node.getAttribute("data-source-line") || "0");
+    if (!sourceLine) {
+      continue;
+    }
+
+    var distance = Math.abs(sourceLine - line);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      target = node;
+    }
+  }
+
+  if (target) {
+    scrollTargetIntoPane(container, target, true);
   }
 }
 
@@ -2207,11 +2466,40 @@ function scrollToHashAnchor(contentEl) {
     return;
   }
 
-  var headingId = safeDecodeURIComponent(rawHash);
-  var target = contentEl.querySelector("#" + cssEscape(headingId));
+  var target = resolveHashTarget(contentEl, rawHash);
   if (target) {
     scrollTargetIntoPane(contentEl, target, false);
   }
+}
+
+function resolveHashTarget(container, rawHash) {
+  if (!container || !rawHash) {
+    return null;
+  }
+
+  var decoded = safeDecodeURIComponent(rawHash);
+  var normalized = decoded.replace(/^#/, "");
+  var candidates = [
+    normalized,
+    rawHash,
+    normalized.toLowerCase(),
+    slugify(normalized),
+    normalized.replace(/^user-content-/, "")
+  ];
+
+  for (var i = 0; i < candidates.length; i++) {
+    var id = candidates[i];
+    if (!id) {
+      continue;
+    }
+
+    var exact = container.querySelector("#" + cssEscape(id));
+    if (exact) {
+      return exact;
+    }
+  }
+
+  return null;
 }
 
 function scrollTargetIntoPane(contentEl, target, smooth) {
@@ -2253,8 +2541,7 @@ function createInDocumentHashLinkHandler(container, pane, link) {
       return;
     }
 
-    var headingId = safeDecodeURIComponent(rawHash);
-    var target = container.querySelector("#" + cssEscape(headingId));
+    var target = resolveHashTarget(container, rawHash);
     if (!target) {
       return;
     }
@@ -2264,7 +2551,8 @@ function createInDocumentHashLinkHandler(container, pane, link) {
     var contentEl = paneContentElements[pane] || container;
     scrollTargetIntoPane(contentEl, target, true);
 
-    var hash = "#" + encodeURIComponent(headingId);
+    var finalId = target.id || safeDecodeURIComponent(rawHash);
+    var hash = "#" + encodeURIComponent(finalId);
     if (history && typeof history.replaceState === "function") {
       history.replaceState(null, "", hash);
     } else {

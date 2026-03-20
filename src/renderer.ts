@@ -205,7 +205,7 @@ export class MarkdownRenderer implements vscode.Disposable {
       ]),
       allowedAttributes: {
         ...sanitizeHtml.defaults.allowedAttributes,
-        "*": ["class", "id", "title", "aria-label", "data-offline-blocked"],
+        "*": ["class", "id", "title", "aria-label", "data-offline-blocked", "data-source-line"],
         a: ["href", "name", "target", "rel"],
         img: ["src", "alt", "title", "width", "height"],
         code: ["class"],

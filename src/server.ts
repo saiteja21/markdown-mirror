@@ -207,15 +207,15 @@ export class MirrorServer implements vscode.Disposable {
 
       try {
         const uri = vscode.Uri.parse(uriRaw);
-        const document = await vscode.workspace.openTextDocument(uri);
-        const line = Math.max(0, Math.min(document.lineCount - 1, Math.floor(ratio * Math.max(document.lineCount - 1, 0))));
-        const range = new vscode.Range(line, 0, line, 0);
-
-        let editor = vscode.window.visibleTextEditors.find((candidate) => candidate.document.uri.toString() === uri.toString());
+        const editor = vscode.window.visibleTextEditors.find((candidate) => candidate.document.uri.toString() === uri.toString());
         if (!editor) {
-          editor = await vscode.window.showTextDocument(document, { preserveFocus: true, preview: true });
+          res.json({ ok: true, skipped: "editor-not-visible" });
+          return;
         }
 
+        const document = editor.document;
+        const line = Math.max(0, Math.min(document.lineCount - 1, Math.floor(ratio * Math.max(document.lineCount - 1, 0))));
+        const range = new vscode.Range(line, 0, line, 0);
         editor.revealRange(range, vscode.TextEditorRevealType.AtTop);
         res.json({ ok: true });
       } catch (error) {
@@ -237,7 +237,9 @@ export class MirrorServer implements vscode.Disposable {
       try {
         const uri = vscode.Uri.parse(uriRaw);
         const document = await vscode.workspace.openTextDocument(uri);
-        const lines = document.getText().split(/\r?\n/);
+        const originalText = document.getText();
+        const eol = originalText.includes("\r\n") ? "\r\n" : "\n";
+        const lines = originalText.split(/\r?\n/);
         const lineIndex = Math.max(0, Math.min(lines.length - 1, Math.floor(sourceLine - 1)));
         const line = lines[lineIndex];
         const replacement = checked ? "- [x]" : "- [ ]";
@@ -249,7 +251,11 @@ export class MirrorServer implements vscode.Disposable {
         }
 
         lines[lineIndex] = updated;
-        const normalized = lines.join("\n");
+        const normalized = lines.join(eol);
+        if (normalized === originalText) {
+          res.json({ ok: true, skipped: "no-op" });
+          return;
+        }
         await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(normalized));
         res.json({ ok: true });
       } catch (error) {

@@ -10,6 +10,7 @@ interface WatcherMessage {
   relativePath?: string;
   html?: string;
   reason?: "typed" | "saved" | "created";
+  changedLine?: number;
   topLine?: number;
   totalLines?: number;
   timestamp: number;
@@ -20,6 +21,7 @@ export class MarkdownWatcher implements vscode.Disposable {
   private readonly fileWatcher: vscode.FileSystemWatcher;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly renderDebounceTimers = new Map<string, NodeJS.Timeout>();
+  private readonly pendingChangedLineByUri = new Map<string, number>();
 
   public constructor(
     private readonly httpServer: http.Server,
@@ -45,7 +47,7 @@ export class MarkdownWatcher implements vscode.Disposable {
         if (event.document.languageId !== "markdown") {
           return;
         }
-        this.schedulePublishFromEditor(event.document);
+        this.schedulePublishFromEditor(event.document, event.contentChanges);
       }),
       vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
         if (event.textEditor.document.languageId !== "markdown") {
@@ -68,6 +70,7 @@ export class MarkdownWatcher implements vscode.Disposable {
       clearTimeout(timer);
     }
     this.renderDebounceTimers.clear();
+    this.pendingChangedLineByUri.clear();
 
     vscode.Disposable.from(...this.disposables).dispose();
   }
@@ -79,8 +82,13 @@ export class MarkdownWatcher implements vscode.Disposable {
     });
   }
 
-  private schedulePublishFromEditor(document: vscode.TextDocument): void {
+  private schedulePublishFromEditor(document: vscode.TextDocument, changes: readonly vscode.TextDocumentContentChangeEvent[]): void {
     const key = document.uri.toString();
+    const changedLine = this.getChangedLine(changes);
+    if (changedLine > 0) {
+      this.pendingChangedLineByUri.set(key, changedLine);
+    }
+
     const existingTimer = this.renderDebounceTimers.get(key);
     if (existingTimer) {
       clearTimeout(existingTimer);
@@ -88,7 +96,9 @@ export class MarkdownWatcher implements vscode.Disposable {
 
     const timer = setTimeout(() => {
       this.renderDebounceTimers.delete(key);
-      this.publish(document.uri, document.getText(), "typed");
+      const pendingLine = this.pendingChangedLineByUri.get(key);
+      this.pendingChangedLineByUri.delete(key);
+      this.publish(document.uri, document.getText(), "typed", pendingLine);
     }, 180);
 
     this.renderDebounceTimers.set(key, timer);
@@ -113,7 +123,7 @@ export class MarkdownWatcher implements vscode.Disposable {
     });
   }
 
-  private publish(uri: vscode.Uri, markdown: string, reason: "typed" | "saved" | "created"): void {
+  private publish(uri: vscode.Uri, markdown: string, reason: "typed" | "saved" | "created", changedLine?: number): void {
     const html = this.renderer.render({
       markdown,
       documentUri: uri,
@@ -126,8 +136,25 @@ export class MarkdownWatcher implements vscode.Disposable {
       relativePath: this.toRelativePath(uri),
       html,
       reason,
+      changedLine,
       timestamp: Date.now()
     });
+  }
+
+  private getChangedLine(changes: readonly vscode.TextDocumentContentChangeEvent[]): number {
+    if (!Array.isArray(changes) || changes.length === 0) {
+      return 0;
+    }
+
+    let minLine = Number.MAX_SAFE_INTEGER;
+    for (const change of changes) {
+      const line = change.range.start.line + 1;
+      if (line < minLine) {
+        minLine = line;
+      }
+    }
+
+    return Number.isFinite(minLine) ? minLine : 0;
   }
 
   private publishViewport(editor: vscode.TextEditor): void {
