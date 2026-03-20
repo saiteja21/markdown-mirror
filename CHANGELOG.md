@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.2] - 2026-03-19
+
+### Fixed
+
+- Fixed UI overlap when the explorer is minimized by reserving header/tab space for the `Explorer` reopen button.
+
+### Changed
+
+- Finalized release packaging and version alignment for Marketplace publish readiness.
+
 ## [0.5.1] - 2026-03-19
 
 ### Fixed

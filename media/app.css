@@ -9,6 +9,7 @@
   --left-panel-width: 280px;
   --right-panel-width: 300px;
   --resizer-width: 6px;
+  --left-panel-reopen-footprint: 132px;
 }
 
 html,
@@ -143,6 +144,11 @@ body.right-panel-collapsed #right-resizer {
 
 body.left-panel-collapsed .panel-reopen-left {
   display: inline-flex;
+}
+
+body.left-panel-collapsed .topbar,
+body.left-panel-collapsed .tabs-bar {
+  padding-left: var(--left-panel-reopen-footprint);
 }
 
 /* ===== LEFT SIDEBAR ===== */
@@ -1485,6 +1491,11 @@ body.theme-dark .word-export-item:hover {
   .topbar {
     padding: 10px 12px;
     flex-wrap: wrap;
+  }
+
+  body.left-panel-collapsed .topbar,
+  body.left-panel-collapsed .tabs-bar {
+    padding-left: 12px;
   }
 
   .topbar-btn {
