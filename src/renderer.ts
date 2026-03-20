@@ -2,6 +2,8 @@ import * as vscode from "vscode";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
 import sanitizeHtml from "sanitize-html";
+import matter from "gray-matter";
+import markdownItTaskLists from "markdown-it-task-lists";
 
 export interface RenderRequest {
   markdown: string;
@@ -29,9 +31,27 @@ export class MarkdownRenderer implements vscode.Disposable {
       }
     });
 
+    this.md.use(markdownItTaskLists, { enabled: true, label: true, labelAfter: true });
+
     this.defaultFenceRule = this.md.renderer.rules.fence ?? ((tokens, idx, options, _env, self) => {
       return self.renderToken(tokens, idx, options);
     });
+
+    this.md.renderer.rules.heading_open = (tokens, idx, options, env, self) => {
+      const token = tokens[idx];
+      if (token.map && token.map.length > 0) {
+        token.attrSet("data-source-line", String(token.map[0] + 1));
+      }
+      return self.renderToken(tokens, idx, options);
+    };
+
+    this.md.renderer.rules.list_item_open = (tokens, idx, options, env, self) => {
+      const token = tokens[idx];
+      if (token.map && token.map.length > 0) {
+        token.attrSet("data-source-line", String(token.map[0] + 1));
+      }
+      return self.renderToken(tokens, idx, options);
+    };
 
     this.md.renderer.rules.fence = (tokens, idx, options, env, self) => {
       const token = tokens[idx];
@@ -47,15 +67,18 @@ export class MarkdownRenderer implements vscode.Disposable {
   }
 
   public render(request: RenderRequest): string {
+    const parsed = matter(request.markdown);
+    const markdown = parsed.content;
     const env = {
       documentUri: request.documentUri,
       assetBaseUrl: request.assetBaseUrl
     };
 
-    const tokens = this.md.parse(request.markdown, env);
+    const tokens = this.md.parse(markdown, env);
     this.rewriteImageSources(tokens, request.documentUri, request.assetBaseUrl);
     const rawHtml = this.md.renderer.render(tokens, this.md.options, env);
-    return this.applyHtmlMode(rawHtml);
+    const frontmatterCard = this.renderFrontmatterCard(parsed.data);
+    return this.applyHtmlMode(frontmatterCard + rawHtml);
   }
 
   public dispose(): void {
@@ -63,6 +86,8 @@ export class MarkdownRenderer implements vscode.Disposable {
   }
 
   private rewriteImageSources(tokens: MarkdownIt.Token[], documentUri: vscode.Uri, assetBaseUrl: string): void {
+    const offlineMode = this.isOfflineModeEnabled();
+
     for (const token of tokens) {
       if (token.type === "inline" && token.children) {
         this.rewriteImageSources(token.children, documentUri, assetBaseUrl);
@@ -75,6 +100,10 @@ export class MarkdownRenderer implements vscode.Disposable {
 
       const source = token.attrGet("src");
       if (!source || !this.isRelativeAsset(source)) {
+        if (source && offlineMode && this.isExternalHttpUrl(source)) {
+          token.attrSet("src", this.buildOfflineBlockedImageDataUri());
+          token.attrSet("title", "Blocked in markdownMirror.offlineMode");
+        }
         continue;
       }
 
@@ -111,8 +140,44 @@ export class MarkdownRenderer implements vscode.Disposable {
 
   private applyHtmlMode(html: string): string {
     const mode = vscode.workspace.getConfiguration("markdownMirror").get<string>("htmlMode", "safe");
+    const offlineMode = this.isOfflineModeEnabled();
     if (mode === "trusted") {
-      return html;
+      if (!offlineMode) {
+        return html;
+      }
+
+      return sanitizeHtml(html, {
+        allowedTags: false,
+        allowedAttributes: false,
+        transformTags: {
+          a: (tagName, attribs) => {
+            const output: Record<string, string> = { ...attribs };
+            if (output.href && this.isExternalHttpUrl(output.href)) {
+              delete output.href;
+              output["data-offline-blocked"] = "true";
+              output.title = "Blocked in markdownMirror.offlineMode";
+            }
+
+            return {
+              tagName,
+              attribs: output
+            };
+          },
+          img: (tagName, attribs) => {
+            const output: Record<string, string> = { ...attribs };
+            if (output.src && this.isExternalHttpUrl(output.src)) {
+              output.src = this.buildOfflineBlockedImageDataUri();
+              output["data-offline-blocked"] = "true";
+              output.title = "Blocked in markdownMirror.offlineMode";
+            }
+
+            return {
+              tagName,
+              attribs: output
+            };
+          }
+        }
+      });
     }
 
     return sanitizeHtml(html, {
@@ -120,6 +185,8 @@ export class MarkdownRenderer implements vscode.Disposable {
         "img",
         "h1",
         "h2",
+        "input",
+        "label",
         "table",
         "thead",
         "tbody",
@@ -131,21 +198,98 @@ export class MarkdownRenderer implements vscode.Disposable {
         "span",
         "div",
         "details",
-        "summary"
+        "summary",
+        "dl",
+        "dt",
+        "dd"
       ]),
       allowedAttributes: {
         ...sanitizeHtml.defaults.allowedAttributes,
-        "*": ["class", "id", "title", "aria-label"],
+        "*": ["class", "id", "title", "aria-label", "data-offline-blocked"],
         a: ["href", "name", "target", "rel"],
         img: ["src", "alt", "title", "width", "height"],
         code: ["class"],
         div: ["class"],
-        span: ["class"]
+        span: ["class"],
+        input: ["type", "checked", "disabled", "id", "data-source-line"]
       },
       allowedSchemes: ["http", "https", "mailto", "data"],
       transformTags: {
-        a: sanitizeHtml.simpleTransform("a", { rel: "noopener noreferrer" }, true)
+        a: (tagName, attribs) => {
+          const output: Record<string, string> = { ...attribs, rel: "noopener noreferrer" };
+          if (offlineMode && output.href && this.isExternalHttpUrl(output.href)) {
+            delete output.href;
+            output["data-offline-blocked"] = "true";
+            output.title = "Blocked in markdownMirror.offlineMode";
+          }
+          return {
+            tagName,
+            attribs: output
+          };
+        },
+        img: (tagName, attribs) => {
+          const output: Record<string, string> = { ...attribs };
+          if (offlineMode && output.src && this.isExternalHttpUrl(output.src)) {
+            output.src = this.buildOfflineBlockedImageDataUri();
+            output["data-offline-blocked"] = "true";
+            output.title = "Blocked in markdownMirror.offlineMode";
+          }
+          return {
+            tagName,
+            attribs: output
+          };
+        }
       }
     });
+  }
+
+  private isOfflineModeEnabled(): boolean {
+    return true;
+  }
+
+  private isExternalHttpUrl(value: string): boolean {
+    return /^(?:https?:)?\/\//i.test(value);
+  }
+
+  private buildOfflineBlockedImageDataUri(): string {
+    const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='700' height='140' viewBox='0 0 700 140'><rect width='700' height='140' fill='#f8fafc' stroke='#cbd5e1'/><text x='20' y='78' fill='#334155' font-family='Segoe UI,Arial,sans-serif' font-size='16'>External image blocked in markdownMirror.offlineMode</text></svg>";
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
+  private renderFrontmatterCard(frontmatterData: Record<string, unknown>): string {
+    if (!this.isFrontmatterCardEnabled() || !frontmatterData || Object.keys(frontmatterData).length === 0) {
+      return "";
+    }
+
+    const rows = Object.entries(frontmatterData)
+      .map(([key, value]) => {
+        const safeKey = this.md.utils.escapeHtml(key);
+        const safeValue = this.md.utils.escapeHtml(this.stringifyFrontmatterValue(value));
+        return `<div class="fm-row"><dt>${safeKey}</dt><dd>${safeValue}</dd></div>`;
+      })
+      .join("");
+
+    return `<details class="frontmatter-card" open><summary>Frontmatter</summary><dl class="fm-grid">${rows}</dl></details>`;
+  }
+
+  private stringifyFrontmatterValue(value: unknown): string {
+    if (Array.isArray(value)) {
+      return value.map((item) => String(item)).join(", ");
+    }
+
+    if (value && typeof value === "object") {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+
+    return String(value);
+  }
+
+  private isFrontmatterCardEnabled(): boolean {
+    const mode = vscode.workspace.getConfiguration("markdownMirror").get<string>("showFrontmatter", "card");
+    return mode !== "none";
   }
 }

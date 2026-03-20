@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Markdown Mirror</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11/styles/github.min.css" />
+  <link rel="stylesheet" href="/vendor/highlightjs/github.min.css" />
+  <link rel="stylesheet" href="/vendor/katex/katex.min.css" />
   <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
@@ -39,11 +40,16 @@
         </div>
       </div>
       <nav id="tree" class="file-tree" aria-label="File tree"></nav>
+      <section id="favorites-panel" class="favorites-panel" aria-label="Pinned files">
+        <header class="tree-root-label">Favorites</header>
+        <div id="favorites-tree" class="favorites-tree"></div>
+      </section>
       <div class="sidebar-footer">
         <span id="status" class="status-indicator">
           <span class="status-dot"></span>
           <span class="status-text">Disconnected</span>
         </span>
+        <span id="file-count" class="file-count">0 files</span>
       </div>
     </aside>
 
@@ -62,12 +68,19 @@
           <span class="breadcrumb-text">Select a file to preview</span>
         </div>
         <div class="topbar-actions">
+          <button id="print-toggle" class="topbar-btn" type="button" aria-pressed="false">Print / PDF</button>
+          <button id="export-html-toggle" class="topbar-btn" type="button" aria-pressed="false">Export HTML</button>
+          <button id="export-word-toggle" class="topbar-btn" type="button" aria-pressed="false">Export Word</button>
+          <button id="slides-toggle" class="topbar-btn" type="button" aria-pressed="false">Slides</button>
           <button id="compare-toggle" class="topbar-btn" type="button" aria-pressed="false">Compare</button>
           <button id="toc-toggle" class="topbar-btn" type="button" aria-pressed="false">TOC</button>
           <button id="theme-toggle" class="topbar-btn" type="button" aria-pressed="false">Dark</button>
           <button id="width-toggle" class="topbar-btn" type="button" aria-pressed="false">Reading Width</button>
+          <button id="shortcuts-toggle" class="topbar-btn" type="button" aria-pressed="false" title="Keyboard shortcuts">?</button>
         </div>
       </header>
+
+      <nav id="tabs-bar" class="tabs-bar" aria-label="Open documents tabs"></nav>
 
       <section id="workarea" class="workarea">
         <section id="viewer-layout" class="viewer-layout" aria-label="Markdown viewer panes">
@@ -93,17 +106,77 @@
         <aside id="toc-panel" class="toc-panel panel-region" aria-label="Table of contents panel">
           <header class="toc-header">
             <span>Table of Contents</span>
-            <button id="right-panel-toggle" class="panel-toggle-btn panel-toggle-light" type="button" aria-pressed="true" title="Collapse table of contents panel">▶</button>
           </header>
           <nav id="toc-list" class="toc-list"></nav>
         </aside>
       </section>
+
+      <footer id="document-stats" class="stats-bar" aria-live="polite">Words: 0 • Characters: 0 • Reading: 0 min</footer>
     </main>
 
     <button id="left-panel-reopen" class="panel-reopen-btn panel-reopen-left" type="button" title="Open explorer panel" aria-label="Open explorer panel">▶ Explorer</button>
-    <button id="right-panel-reopen" class="panel-reopen-btn panel-reopen-right" type="button" title="Open table of contents panel" aria-label="Open table of contents panel">◀ TOC</button>
+    <button id="back-to-top" class="back-to-top" type="button" aria-label="Back to top">Top</button>
+
+    <div id="shortcuts-modal" class="shortcuts-modal" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" hidden>
+      <div class="shortcuts-card">
+        <header class="shortcuts-header">
+          <h2>Keyboard Shortcuts</h2>
+          <button id="shortcuts-close" class="topbar-btn" type="button" aria-label="Close shortcuts">Close</button>
+        </header>
+        <ul class="shortcuts-list">
+          <li><kbd>/</kbd> Focus file search</li>
+          <li><kbd>j</kbd> / <kbd>k</kbd> Move through files</li>
+          <li><kbd>Enter</kbd> Open focused file</li>
+          <li><kbd>[</kbd> / <kbd>]</kbd> Previous/next file</li>
+          <li><kbd>t</kbd> Toggle TOC panel</li>
+          <li><kbd>d</kbd> Toggle light/dark theme</li>
+          <li><kbd>p</kbd> Print / Export to PDF</li>
+          <li><kbd>?</kbd> Toggle this help</li>
+        </ul>
+      </div>
+    </div>
+
+    <div id="lightbox" class="lightbox" hidden>
+      <button id="lightbox-close" class="topbar-btn lightbox-close" type="button" aria-label="Close image zoom">Close</button>
+      <img id="lightbox-image" class="lightbox-image" alt="Expanded preview image" />
+    </div>
+
+    <div id="slides-overlay" class="slides-overlay" hidden>
+      <button id="slides-close" class="topbar-btn slides-close" type="button" aria-label="Exit slide mode">Exit</button>
+      <button id="slides-prev" class="slides-nav slides-prev" type="button" aria-label="Previous slide">◀</button>
+      <section id="slides-stage" class="slides-stage" aria-live="polite"></section>
+      <button id="slides-next" class="slides-nav slides-next" type="button" aria-label="Next slide">▶</button>
+      <footer id="slides-counter" class="slides-counter">1 / 1</footer>
+    </div>
+
+    <div id="word-export-modal" class="word-export-modal" role="dialog" aria-modal="true" aria-label="Export to Word" hidden>
+      <div class="word-export-card">
+        <header class="word-export-header">
+          <h2>Export to Word</h2>
+          <button id="word-export-close" class="topbar-btn" type="button" aria-label="Close export dialog">Close</button>
+        </header>
+
+        <p class="word-export-hint">Choose one or more markdown files. The exported .doc opens in Microsoft Word.</p>
+
+        <div class="word-export-controls">
+          <button id="word-export-select-current" class="topbar-btn" type="button">Current</button>
+          <button id="word-export-select-tabs" class="topbar-btn" type="button">Open Tabs</button>
+          <button id="word-export-select-all" class="topbar-btn" type="button">All</button>
+          <button id="word-export-clear" class="topbar-btn" type="button">Clear</button>
+        </div>
+
+        <div id="word-export-list" class="word-export-list" aria-label="Word export documents"></div>
+
+        <footer class="word-export-footer">
+          <button id="word-export-cancel" class="topbar-btn" type="button">Cancel</button>
+          <button id="word-export-confirm" class="topbar-btn is-active" type="button">Export .doc</button>
+        </footer>
+      </div>
+    </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <script defer src="/vendor/katex/katex.min.js"></script>
+  <script defer src="/vendor/katex/contrib/auto-render.min.js"></script>
+  <script src="/vendor/mermaid/mermaid.min.js"></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

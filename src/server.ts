@@ -98,6 +98,8 @@ export class MirrorServer implements vscode.Disposable {
   }
 
   private configureRoutes(): void {
+    this.app.use(express.json({ limit: "200kb" }));
+
     this.app.use((req, res, next) => {
       const remoteAddress = req.socket.remoteAddress ?? "";
       if (!this.isLoopbackClient(remoteAddress)) {
@@ -119,6 +121,113 @@ export class MirrorServer implements vscode.Disposable {
         res.json({ roots: tree });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Unknown error";
+        res.status(500).json({ error: message });
+      }
+    });
+
+    this.app.get("/api/settings", (_req, res) => {
+      const config = vscode.workspace.getConfiguration("markdownMirror");
+      const rawMermaidTheme = config.get<string>("mermaidTheme", "default");
+      const mermaidTheme = this.normalizeMermaidTheme(rawMermaidTheme);
+      const enableMath = config.get<boolean>("enableMath", false);
+      const customCssPath = (config.get<string>("customCssPath", "") || "").trim();
+      const offlineMode = true;
+
+      res.json({
+        enableMath,
+        mermaidTheme,
+        customCssPath,
+        offlineMode
+      });
+    });
+
+    this.app.get("/api/custom-css", async (_req, res) => {
+      const cssPathSetting = (vscode.workspace.getConfiguration("markdownMirror").get<string>("customCssPath", "") || "").trim();
+      if (!cssPathSetting) {
+        res.status(204).send("");
+        return;
+      }
+
+      const normalizedSegments = cssPathSetting.replace(/\\/g, "/").split("/").filter((segment) => segment.length > 0);
+      if (normalizedSegments.length === 0 || normalizedSegments.some((segment) => segment === "." || segment === "..")) {
+        res.status(400).json({ error: "Invalid customCssPath setting." });
+        return;
+      }
+
+      const folders = vscode.workspace.workspaceFolders ?? [];
+      for (const folder of folders) {
+        const targetUri = vscode.Uri.joinPath(folder.uri, ...normalizedSegments);
+        try {
+          const bytes = await vscode.workspace.fs.readFile(targetUri);
+          const css = new TextDecoder("utf-8").decode(bytes);
+          res.type("text/css").send(css);
+          return;
+        } catch {
+          // Try next workspace folder.
+        }
+      }
+
+      res.status(404).json({ error: "Custom CSS file not found in workspace." });
+    });
+
+    this.app.post("/api/scroll-sync", async (req, res) => {
+      const uriRaw = typeof req.body?.uri === "string" ? req.body.uri : "";
+      const ratio = typeof req.body?.ratio === "number" ? req.body.ratio : undefined;
+
+      if (!uriRaw || ratio === undefined || Number.isNaN(ratio)) {
+        res.status(400).json({ error: "uri and ratio are required." });
+        return;
+      }
+
+      try {
+        const uri = vscode.Uri.parse(uriRaw);
+        const document = await vscode.workspace.openTextDocument(uri);
+        const line = Math.max(0, Math.min(document.lineCount - 1, Math.floor(ratio * Math.max(document.lineCount - 1, 0))));
+        const range = new vscode.Range(line, 0, line, 0);
+
+        let editor = vscode.window.visibleTextEditors.find((candidate) => candidate.document.uri.toString() === uri.toString());
+        if (!editor) {
+          editor = await vscode.window.showTextDocument(document, { preserveFocus: true, preview: true });
+        }
+
+        editor.revealRange(range, vscode.TextEditorRevealType.AtTop);
+        res.json({ ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to sync editor scroll.";
+        res.status(500).json({ error: message });
+      }
+    });
+
+    this.app.post("/api/toggle-checkbox", async (req, res) => {
+      const uriRaw = typeof req.body?.uri === "string" ? req.body.uri : "";
+      const sourceLine = typeof req.body?.sourceLine === "number" ? req.body.sourceLine : undefined;
+      const checked = Boolean(req.body?.checked);
+
+      if (!uriRaw || sourceLine === undefined || Number.isNaN(sourceLine)) {
+        res.status(400).json({ error: "uri and sourceLine are required." });
+        return;
+      }
+
+      try {
+        const uri = vscode.Uri.parse(uriRaw);
+        const document = await vscode.workspace.openTextDocument(uri);
+        const lines = document.getText().split(/\r?\n/);
+        const lineIndex = Math.max(0, Math.min(lines.length - 1, Math.floor(sourceLine - 1)));
+        const line = lines[lineIndex];
+        const replacement = checked ? "- [x]" : "- [ ]";
+        const updated = line.replace(/^(\s*[-*+]\s+)\[( |x|X)\]/, "$1" + replacement.slice(2));
+
+        if (updated === line) {
+          res.status(409).json({ error: "No task checkbox found at source line." });
+          return;
+        }
+
+        lines[lineIndex] = updated;
+        const normalized = lines.join("\n");
+        await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(normalized));
+        res.json({ ok: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to update checkbox.";
         res.status(500).json({ error: message });
       }
     });
@@ -342,6 +451,19 @@ export class MirrorServer implements vscode.Disposable {
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown reason";
       throw new Error(`Invalid web root: ${this.webRootPath}. Missing index.html (${reason}).`);
+    }
+  }
+
+  private normalizeMermaidTheme(value: string): "default" | "dark" | "forest" | "neutral" {
+    switch ((value || "").toLowerCase()) {
+      case "dark":
+        return "dark";
+      case "forest":
+        return "forest";
+      case "neutral":
+        return "neutral";
+      default:
+        return "default";
     }
   }
 }

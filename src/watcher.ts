@@ -5,11 +5,13 @@ import { WebSocketServer, WebSocket } from "ws";
 import { MarkdownRenderer } from "./renderer";
 
 interface WatcherMessage {
-  type: "connected" | "document-updated" | "document-deleted";
+  type: "connected" | "document-updated" | "document-deleted" | "viewport-updated";
   uri?: string;
   relativePath?: string;
   html?: string;
   reason?: "typed" | "saved" | "created";
+  topLine?: number;
+  totalLines?: number;
   timestamp: number;
 }
 
@@ -45,6 +47,18 @@ export class MarkdownWatcher implements vscode.Disposable {
         }
         this.schedulePublishFromEditor(event.document);
       }),
+      vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
+        if (event.textEditor.document.languageId !== "markdown") {
+          return;
+        }
+        this.publishViewport(event.textEditor);
+      }),
+      vscode.window.onDidChangeActiveTextEditor((editor) => {
+        if (!editor || editor.document.languageId !== "markdown") {
+          return;
+        }
+        this.publishViewport(editor);
+      }),
       new vscode.Disposable(() => this.wsServer.close())
     );
   }
@@ -68,7 +82,7 @@ export class MarkdownWatcher implements vscode.Disposable {
     const timer = setTimeout(() => {
       this.renderDebounceTimers.delete(key);
       this.publish(document.uri, document.getText(), "typed");
-    }, 60);
+    }, 180);
 
     this.renderDebounceTimers.set(key, timer);
   }
@@ -105,6 +119,22 @@ export class MarkdownWatcher implements vscode.Disposable {
       relativePath: this.toRelativePath(uri),
       html,
       reason,
+      timestamp: Date.now()
+    });
+  }
+
+  private publishViewport(editor: vscode.TextEditor): void {
+    const visibleRange = editor.visibleRanges[0];
+    if (!visibleRange) {
+      return;
+    }
+
+    this.broadcast({
+      type: "viewport-updated",
+      uri: editor.document.uri.toString(),
+      relativePath: this.toRelativePath(editor.document.uri),
+      topLine: visibleRange.start.line,
+      totalLines: editor.document.lineCount,
       timestamp: Date.now()
     });
   }

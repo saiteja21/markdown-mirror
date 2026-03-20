@@ -16,6 +16,24 @@ It scans markdown files, serves a mirrored structure, and updates the browser pr
 - Side-by-side compare mode (open two markdown docs simultaneously)
 - TOC sidebar for heading-based navigation in the active pane
 - Light/Dark preview theme toggle
+- Print / PDF export via browser print flow
+- KaTeX math rendering (optional, off by default)
+- Word/character count and reading-time stats bar
+- Keyboard shortcuts for fast navigation and actions
+- Heading anchor links for deep-linking sections
+- Mermaid theme control via settings
+- Editor/browser scroll sync
+- Slide mode for `---` separated sections
+- Export current document to standalone HTML
+- Interactive task list checkbox toggles
+- YAML frontmatter card rendering
+- Tabs for recently opened documents
+- Image lightbox/zoom
+- Favorites (pinned files) in sidebar
+- Back-to-top quick action
+- Internal markdown link validation
+- Custom CSS injection from workspace
+- Multi-workspace visual markers + sidebar file count
 - Auto-starts on markdown workspaces (configurable)
 - WebSocket hot updates (no full-page refresh flicker)
 - Relative image path support through local asset mapping
@@ -85,6 +103,10 @@ This stops the local server for the current VS Code session.
 	- `markdownMirror.autoStart`
 	- `markdownMirror.autoOpenMode`
 	- `markdownMirror.rootPath`
+	- `markdownMirror.enableMath`
+	- `markdownMirror.mermaidTheme`
+	- `markdownMirror.showFrontmatter`
+	- `markdownMirror.customCssPath`
 
 You can also open Settings (JSON) and set values directly.
 
@@ -129,6 +151,20 @@ Optional scoped-folder example (only if you want to limit discovery):
 - `markdownMirror.rootPath`
 	- Empty (default): use the currently open workspace root and scan all markdown files.
 	- Relative path (for example `docs`): only render markdown tree from that folder.
+- `markdownMirror.enableMath`
+	- `true` (default): enable KaTeX rendering for inline and block math.
+	- `false`: disable math rendering.
+- `markdownMirror.mermaidTheme`
+	- `default` (default): uses Mermaid default in light mode and dark in dark mode.
+	- `dark`: always use Mermaid dark theme.
+	- `forest`: always use Mermaid forest theme.
+	- `neutral`: always use Mermaid neutral theme.
+- `markdownMirror.showFrontmatter`
+	- `card` (default): render YAML frontmatter as a collapsible metadata card.
+	- `none`: do not display frontmatter card.
+- `markdownMirror.customCssPath`
+	- Empty (default): use built-in styles only.
+	- Relative path (for example `docs/preview.css`): inject custom CSS from workspace into preview.
 
 Manual command start always opens the browser.
 
@@ -138,6 +174,19 @@ Manual command start always opens the browser.
 - Requests from non-loopback addresses are rejected.
 - Asset requests are workspace-bounded to prevent path traversal.
 
+## Licensing And Third-Party Compliance
+
+Markdown Mirror follows a local-first policy for implementation, but uses third-party libraries where they are the most practical and secure choice.
+
+- Third-party notices and attributions: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- Release-time legal checklist: see [docs/release-legal-checklist.md](docs/release-legal-checklist.md).
+
+Release policy:
+
+- Prefer first-party implementation when practical.
+- Use third-party components only with clear value.
+- Before release, verify all required notices and license obligations are included.
+
 ## Quick Start
 
 1. Install the extension from the VS Code Marketplace.
@@ -145,4 +194,34 @@ Manual command start always opens the browser.
 3. Extension auto-starts (if enabled) and opens your browser based on `autoOpenMode`.
 4. Click any markdown file in the left explorer.
 5. Edit markdown in VS Code and see live updates in browser.
-6. Use topbar controls for Compare, TOC, Dark/Light theme, and Reading Width.
+6. Use topbar controls for Compare, TOC, Slides, Export HTML, theme, and Reading Width.
+
+## Keyboard Shortcuts
+
+- `/` Focus search
+- `j` / `k` Move through files
+- `Enter` Open focused file
+- `[` / `]` Open previous/next file
+- `t` Toggle TOC panel
+- `d` Toggle light/dark theme
+- `p` Print / Export to PDF
+- `?` Show shortcuts help
+
+## Troubleshooting
+
+- Math not rendering:
+	- Confirm `markdownMirror.enableMath` is enabled in VS Code Settings.
+	- Use standard delimiters: inline `$E = mc^2$`, block `$$\int_0^1 x^2\,dx = \frac{1}{3}$$`.
+	- If needed, run `Markdown Mirror: Stop` and then `Markdown Mirror: Start`.
+- Mermaid not rendering:
+	- Confirm `markdownMirror.enableMermaid` is enabled.
+	- Ensure fenced block language is exactly `mermaid`.
+- Browser page looks stale:
+	- Refresh the browser tab once.
+	- Verify VS Code has write access to the workspace files.
+
+## Author
+
+Sai Teja Nagamothu  
+[![GitHub](https://img.shields.io/badge/GitHub-saiteja21-181717?logo=github&logoColor=white)](https://github.com/saiteja21)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-sai--teja--n-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/saiteja-n/)
