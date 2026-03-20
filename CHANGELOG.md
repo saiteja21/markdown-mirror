@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.4] - 2026-03-20
+
+### Fixed
+
+- Fixed in-page anchor and TOC navigation targeting so jumps resolve in the correct active pane in compare mode.
+- Fixed workspace switching behavior for root path scoping by resolving configuration per workspace/folder with safe fallback when scoped paths are missing.
+- Fixed settings precedence edge case where explicit `rootPaths: []` could incorrectly fall back to legacy `rootPath`.
+
+### Changed
+
+- Added live configuration hot-apply: updates to `markdownMirror.*` settings now propagate to the preview without page refresh.
+- Improved responsive topbar layout with consistent button sizing and horizontal overflow handling for actions.
+- Added compact tab picker dropdown for narrow layouts.
+- Enhanced favorites UX with in-list unfavorite action and collapsible favorites section.
+- Updated settings documentation for global defaults vs workspace/folder overrides.
+
 ## [0.5.3] - 2026-03-20
 
 ### Changed

@@ -345,11 +345,10 @@ export class MirrorServer implements vscode.Disposable {
 
   private async buildWorkspaceTree(): Promise<WorkspaceTreeNode[]> {
     const folders = vscode.workspace.workspaceFolders ?? [];
-    const rootPathSettings = this.getRootPathSettings();
-
     const rootCandidates = (
       await Promise.all(folders.map(async (folder) => {
-        return this.resolveTreeRoots(folder, rootPathSettings);
+        const folderRootPathSettings = this.getRootPathSettings(folder);
+        return this.resolveTreeRoots(folder, folderRootPathSettings);
       }))
     ).flat();
 
@@ -411,11 +410,20 @@ export class MirrorServer implements vscode.Disposable {
     return nodes;
   }
 
-  private getRootPathSettings(): string[] {
-    const config = vscode.workspace.getConfiguration("markdownMirror");
-    const configured = config.get<string[]>("rootPaths", []);
-    const normalizedMulti = Array.isArray(configured)
-      ? configured
+  private getRootPathSettings(folder: vscode.WorkspaceFolder): string[] {
+    const scopedConfig = vscode.workspace.getConfiguration("markdownMirror", folder.uri);
+    const rootPathsInspect = scopedConfig.inspect<string[]>("rootPaths");
+    const effectiveRootPaths =
+      rootPathsInspect?.workspaceFolderValue ??
+      rootPathsInspect?.workspaceValue ??
+      rootPathsInspect?.globalValue;
+    const hasExplicitRootPathsSetting =
+      rootPathsInspect?.workspaceFolderValue !== undefined ||
+      rootPathsInspect?.workspaceValue !== undefined ||
+      rootPathsInspect?.globalValue !== undefined;
+
+    const normalizedMulti = Array.isArray(effectiveRootPaths)
+      ? effectiveRootPaths
           .filter((value): value is string => typeof value === "string")
           .map((value) => value.trim().replace(/\\/g, "/"))
           .filter((value, index, all) => value.length > 0 && all.indexOf(value) === index)
@@ -425,8 +433,19 @@ export class MirrorServer implements vscode.Disposable {
       return normalizedMulti;
     }
 
+    // If rootPaths is explicitly configured (even as an empty array), do not fall back to legacy rootPath.
+    if (hasExplicitRootPathsSetting) {
+      return [];
+    }
+
     // Backward compatibility for existing users of the single root setting.
-    const single = (config.get<string>("rootPath", "") || "").trim().replace(/\\/g, "/");
+    const rootPathInspect = scopedConfig.inspect<string>("rootPath");
+    const effectiveRootPath =
+      rootPathInspect?.workspaceFolderValue ??
+      rootPathInspect?.workspaceValue ??
+      rootPathInspect?.globalValue;
+
+    const single = String(effectiveRootPath || "").trim().replace(/\\/g, "/");
     return single ? [single] : [];
   }
 
@@ -458,6 +477,15 @@ export class MirrorServer implements vscode.Disposable {
       }
       seen.add(key);
       deduped.push(candidate);
+    }
+
+    if (deduped.length === 0) {
+      // If configured paths are not found in this workspace folder, gracefully fall back to folder root.
+      return [{
+        folderName: folder.name,
+        rootUri: folder.uri,
+        relativeBase: ""
+      }];
     }
 
     return deduped;

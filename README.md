@@ -149,6 +149,7 @@ Optional scoped-folder example (only if you want to limit discovery):
 Backward compatibility:
 
 - `markdownMirror.rootPath` still works as a legacy fallback when `markdownMirror.rootPaths` is empty.
+- If `markdownMirror.rootPaths` is explicitly set (including `[]`), it takes precedence and legacy `rootPath` is ignored.
 
 Path format rules:
 
@@ -156,7 +157,9 @@ Path format rules:
 - Do not use absolute paths (for example `C:/repo/docs` or `/repo/docs`).
 - Do not use path traversal segments (`..` or `.`).
 - In multi-root workspaces, each entry is resolved inside each workspace folder.
+- You can set these in **User** settings for global defaults, then override in **Workspace** or workspace-folder settings when needed.
 - Default setting: `markdownMirror.rootPaths` is empty (`[]`), which means scan all markdown files under each workspace folder.
+- If configured paths are missing in a workspace folder, Markdown Mirror falls back to scanning that workspace folder root.
 
 ## Settings
 

@@ -2,7 +2,7 @@
   "name": "markdown-mirror",
   "displayName": "Markdown Mirror - Live Markdown Preview",
   "description": "Live Markdown preview for your full VS Code workspace with Mermaid, KaTeX, TOC, slides, and export.",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "publisher": "ForkedCode",
   "icon": "logo.png",
   "galleryBanner": {
@@ -93,12 +93,14 @@
         },
         "markdownMirror.rootPath": {
           "type": "string",
+          "scope": "resource",
           "default": "",
           "description": "Legacy single-folder scope. Relative path only (for example docs or Compiler). Absolute paths and traversal segments are ignored.",
           "deprecationMessage": "Use markdownMirror.rootPaths for multiple folder scopes."
         },
         "markdownMirror.rootPaths": {
           "type": "array",
+          "scope": "resource",
           "items": {
             "type": "string"
           },

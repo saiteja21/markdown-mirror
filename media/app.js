@@ -40,6 +40,7 @@ const state = {
   treeKeyboardIndex: -1,
   shortcutsModalOpen: false,
   pinnedUris: new Set(),
+  favoritesCollapsed: false,
   openTabs: [],
   slideMode: {
     active: false,
@@ -67,7 +68,8 @@ const storageKeys = {
   rightPanelWidth: "markdownMirror.rightPanelWidth",
   leftPanelCollapsed: "markdownMirror.leftPanelCollapsed",
   rightPanelCollapsed: "markdownMirror.rightPanelCollapsed",
-  pinnedUris: "markdownMirror.pinnedUris"
+  pinnedUris: "markdownMirror.pinnedUris",
+  favoritesCollapsed: "markdownMirror.favoritesCollapsed"
 };
 
 const constants = {
@@ -112,6 +114,8 @@ const tabsBarEl = document.getElementById("tabs-bar");
 const treeExpandAllEl = document.getElementById("tree-expand-all");
 const treeCollapseAllEl = document.getElementById("tree-collapse-all");
 const leftPanelReopenEl = document.getElementById("left-panel-reopen");
+const favoritesPanelEl = document.getElementById("favorites-panel");
+const favoritesToggleEl = document.getElementById("favorites-toggle");
 const favoritesTreeEl = document.getElementById("favorites-tree");
 const fileCountEl = document.getElementById("file-count");
 const backToTopEl = document.getElementById("back-to-top");
@@ -191,12 +195,14 @@ async function bootstrap() {
   await loadRuntimeSettings();
   applyRuntimeFeatureToggles();
   loadPinnedUris();
+  loadFavoritesPrefs();
   loadPanelPrefs();
   setupPanelManager();
 
   setupPaneActivation();
   setupSearch();
   setupTreeControls();
+  setupFavoritesPanel();
   setupPrintToggle();
   setupExportHtml();
   setupWordExport();
@@ -218,6 +224,34 @@ async function bootstrap() {
     var elapsed = Math.round(performance.now() - state.perf.bootStartedAt);
     console.info("[Markdown Mirror] boot complete in " + String(elapsed) + "ms");
   });
+}
+
+function loadFavoritesPrefs() {
+  state.favoritesCollapsed = readStorage(storageKeys.favoritesCollapsed, "false") === "true";
+}
+
+function setupFavoritesPanel() {
+  applyFavoritesCollapsedUi();
+
+  if (!favoritesToggleEl) {
+    return;
+  }
+
+  favoritesToggleEl.addEventListener("click", function () {
+    state.favoritesCollapsed = !state.favoritesCollapsed;
+    writeStorage(storageKeys.favoritesCollapsed, String(state.favoritesCollapsed));
+    applyFavoritesCollapsedUi();
+  });
+}
+
+function applyFavoritesCollapsedUi() {
+  if (!favoritesPanelEl || !favoritesToggleEl) {
+    return;
+  }
+
+  favoritesPanelEl.classList.toggle("collapsed", state.favoritesCollapsed);
+  favoritesToggleEl.textContent = state.favoritesCollapsed ? "▶" : "▼";
+  favoritesToggleEl.setAttribute("aria-expanded", String(!state.favoritesCollapsed));
 }
 
 function setControlVisibility(element, enabled) {
@@ -548,31 +582,46 @@ function setupTreeControls() {
 }
 
 function setupPrintToggle() {
-  if (!printToggleEl || !state.runtimeSettings.enablePrint) {
+  if (!printToggleEl || printToggleEl.dataset.boundPrint === "true") {
     return;
   }
 
+  printToggleEl.dataset.boundPrint = "true";
+
   printToggleEl.addEventListener("click", function () {
+    if (!state.runtimeSettings.enablePrint) {
+      return;
+    }
     window.print();
   });
 }
 
 function setupExportHtml() {
-  if (!exportHtmlToggleEl || !state.runtimeSettings.enableHtmlExport) {
+  if (!exportHtmlToggleEl || exportHtmlToggleEl.dataset.boundExportHtml === "true") {
     return;
   }
 
+  exportHtmlToggleEl.dataset.boundExportHtml = "true";
+
   exportHtmlToggleEl.addEventListener("click", function () {
+    if (!state.runtimeSettings.enableHtmlExport) {
+      return;
+    }
     void exportActivePaneAsStandaloneHtml();
   });
 }
 
 function setupWordExport() {
-  if (!state.runtimeSettings.enableWordExport || !exportWordToggleEl || !wordExportModalEl || !wordExportListEl) {
+  if (!exportWordToggleEl || !wordExportModalEl || !wordExportListEl || wordExportModalEl.dataset.boundWordExport === "true") {
     return;
   }
 
+  wordExportModalEl.dataset.boundWordExport = "true";
+
   exportWordToggleEl.addEventListener("click", function () {
+    if (!state.runtimeSettings.enableWordExport) {
+      return;
+    }
     setWordExportModalOpen(true);
   });
 
@@ -590,6 +639,9 @@ function setupWordExport() {
 
   if (wordExportConfirmEl) {
     wordExportConfirmEl.addEventListener("click", function () {
+      if (!state.runtimeSettings.enableWordExport) {
+        return;
+      }
       void exportSelectionToWord();
     });
   }
@@ -764,15 +816,17 @@ function collectDocsFromNodes(nodes, output) {
 }
 
 function setupSlidesMode() {
-  if (!state.runtimeSettings.enableSlides) {
-    if (slidesOverlayEl) {
-      slidesOverlayEl.hidden = true;
-    }
+  if (!slidesOverlayEl || slidesOverlayEl.dataset.boundSlides === "true") {
     return;
   }
 
+  slidesOverlayEl.dataset.boundSlides = "true";
+
   if (slidesToggleEl) {
     slidesToggleEl.addEventListener("click", function () {
+      if (!state.runtimeSettings.enableSlides) {
+        return;
+      }
       toggleSlidesMode();
     });
   }
@@ -1166,15 +1220,18 @@ function openSiblingFile(direction) {
 }
 
 function setupWidthModeToggle() {
-  if (!state.runtimeSettings.enableWidthToggle) {
-    applyWidthMode(constants.widthModeFull);
+  var initialMode = readStorage(storageKeys.widthMode, state.runtimeSettings.defaultWidthMode || constants.widthModeFull);
+  applyWidthMode(state.runtimeSettings.enableWidthToggle && initialMode === constants.widthModeReading ? constants.widthModeReading : constants.widthModeFull);
+
+  if (!widthToggleEl || widthToggleEl.dataset.boundWidthToggle === "true") {
     return;
   }
 
-  var initialMode = readStorage(storageKeys.widthMode, state.runtimeSettings.defaultWidthMode || constants.widthModeFull);
-  applyWidthMode(initialMode === constants.widthModeReading ? constants.widthModeReading : constants.widthModeFull);
-
+  widthToggleEl.dataset.boundWidthToggle = "true";
   widthToggleEl.addEventListener("click", function () {
+    if (!state.runtimeSettings.enableWidthToggle) {
+      return;
+    }
     var isReading = document.body.classList.contains("reading-width");
     applyWidthMode(isReading ? constants.widthModeFull : constants.widthModeReading);
   });
@@ -1190,15 +1247,18 @@ function applyWidthMode(mode) {
 }
 
 function setupThemeToggle() {
-  if (!state.runtimeSettings.enableThemeToggle) {
-    applyTheme(constants.themeLight);
+  var initialTheme = readStorage(storageKeys.themeMode, state.runtimeSettings.defaultTheme || constants.themeLight);
+  applyTheme(state.runtimeSettings.enableThemeToggle && initialTheme === constants.themeDark ? constants.themeDark : constants.themeLight);
+
+  if (!themeToggleEl || themeToggleEl.dataset.boundThemeToggle === "true") {
     return;
   }
 
-  var initialTheme = readStorage(storageKeys.themeMode, state.runtimeSettings.defaultTheme || constants.themeLight);
-  applyTheme(initialTheme === constants.themeDark ? constants.themeDark : constants.themeLight);
-
+  themeToggleEl.dataset.boundThemeToggle = "true";
   themeToggleEl.addEventListener("click", function () {
+    if (!state.runtimeSettings.enableThemeToggle) {
+      return;
+    }
     var isDark = document.body.classList.contains("theme-dark");
     applyTheme(isDark ? constants.themeLight : constants.themeDark);
   });
@@ -1219,15 +1279,18 @@ function applyTheme(theme) {
 }
 
 function setupCompareToggle() {
-  if (!state.runtimeSettings.enableCompare) {
-    applyCompareMode(false);
+  var initialCompare = readStorage(storageKeys.compareMode, state.runtimeSettings.defaultCompareMode ? "true" : "false") === "true";
+  applyCompareMode(state.runtimeSettings.enableCompare ? initialCompare : false);
+
+  if (!compareToggleEl || compareToggleEl.dataset.boundCompareToggle === "true") {
     return;
   }
 
-  var initialCompare = readStorage(storageKeys.compareMode, state.runtimeSettings.defaultCompareMode ? "true" : "false") === "true";
-  applyCompareMode(initialCompare);
-
+  compareToggleEl.dataset.boundCompareToggle = "true";
   compareToggleEl.addEventListener("click", function () {
+    if (!state.runtimeSettings.enableCompare) {
+      return;
+    }
     applyCompareMode(!state.compareMode);
   });
 }
@@ -1257,14 +1320,16 @@ function applyCompareMode(enabled) {
 }
 
 function setupTocToggle() {
-  if (!state.runtimeSettings.enableToc) {
-    state.panelPrefs.rightCollapsed = true;
-    writeStorage(storageKeys.rightPanelCollapsed, "true");
-    applyPanelStateFromPrefs();
+  if (!tocToggleEl || tocToggleEl.dataset.boundTocToggle === "true") {
     return;
   }
 
+  tocToggleEl.dataset.boundTocToggle = "true";
   tocToggleEl.addEventListener("click", function () {
+    if (!state.runtimeSettings.enableToc) {
+      return;
+    }
+
     if (state.panelPrefs.rightCollapsed) {
       state.panelPrefs.rightCollapsed = false;
       writeStorage(storageKeys.rightPanelCollapsed, "false");
@@ -1532,8 +1597,16 @@ function renderFavorites() {
     button.className = "tree-file is-pinned";
     button.type = "button";
     button.dataset.uri = uri;
-    button.innerHTML = '<span>' + escapeHtml(node.name || node.relativePath || "Pinned") + '</span>';
+    button.innerHTML =
+      '<span>' + escapeHtml(node.name || node.relativePath || "Pinned") + '</span>' +
+      '<span class="tree-file-pin" role="button" tabindex="0" title="Unfavorite" aria-label="Unfavorite">★</span>';
     button.addEventListener("click", createOpenHandler(uri, node.relativePath));
+
+    var pinButton = button.querySelector(".tree-file-pin");
+    if (pinButton) {
+      pinButton.addEventListener("click", createPinToggleHandler(uri));
+    }
+
     favoritesTreeEl.appendChild(button);
   }
 }
@@ -1666,19 +1739,16 @@ function updateBreadcrumb() {
   if (state.compareMode) {
     var left = primaryPath ? escapeHtml(primaryPath) : "No file";
     var right = secondaryPath ? escapeHtml(secondaryPath) : "No file";
-    var activeLabel = state.activePane === "primary" ? "Primary" : "Secondary";
+    var primaryClass = state.activePane === "primary" ? "breadcrumb-current" : "breadcrumb-segment";
+    var secondaryClass = state.activePane === "secondary" ? "breadcrumb-current" : "breadcrumb-segment";
     breadcrumbEl.innerHTML =
-      '<span class="breadcrumb-segment">' + activeLabel + '</span>' +
-      '<span class="breadcrumb-separator">:</span>' +
-      '<span class="breadcrumb-current">' + (state.activePane === "primary" ? left : right) + '</span>' +
-      '<span class="breadcrumb-separator">|</span>' +
       '<span class="breadcrumb-segment">Primary</span>' +
       '<span class="breadcrumb-separator">:</span>' +
-      '<span class="breadcrumb-segment">' + left + '</span>' +
+      '<span class="' + primaryClass + '">' + left + '</span>' +
       '<span class="breadcrumb-separator">|</span>' +
       '<span class="breadcrumb-segment">Secondary</span>' +
       '<span class="breadcrumb-separator">:</span>' +
-      '<span class="breadcrumb-segment">' + right + '</span>';
+      '<span class="' + secondaryClass + '">' + right + '</span>';
     return;
   }
 
@@ -1752,6 +1822,34 @@ function renderTabs() {
   var sorted = state.openTabs.slice().sort(function (a, b) {
     return b.lastOpenedAt - a.lastOpenedAt;
   });
+
+  var tabPicker = document.createElement("select");
+  tabPicker.className = "tabs-select";
+  tabPicker.setAttribute("aria-label", "Open document tabs");
+
+  for (var pickerIndex = 0; pickerIndex < sorted.length; pickerIndex++) {
+    var pickerTab = sorted[pickerIndex];
+    var option = document.createElement("option");
+    option.value = pickerTab.uri;
+    option.textContent = pickerTab.relativePath || extractFileName(pickerTab.uri) || "Untitled";
+    option.title = pickerTab.relativePath || pickerTab.uri;
+    if (pickerTab.uri === activeUri) {
+      option.selected = true;
+    }
+    tabPicker.appendChild(option);
+  }
+
+  tabPicker.addEventListener("change", function () {
+    var selectedUri = tabPicker.value;
+    for (var k = 0; k < sorted.length; k++) {
+      if (sorted[k].uri === selectedUri) {
+        void openDocument(sorted[k].uri, sorted[k].relativePath, targetPane);
+        break;
+      }
+    }
+  });
+
+  tabsBarEl.appendChild(tabPicker);
 
   for (var i = 0; i < sorted.length; i++) {
     var tab = sorted[i];
@@ -1834,7 +1932,7 @@ function createTocJumpHandler(contentEl, headingId) {
       return;
     }
 
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    scrollTargetIntoPane(contentEl, target, true);
   };
 }
 
@@ -1886,7 +1984,50 @@ function connectSocket() {
       applyEditorViewportSync("primary", message);
       applyEditorViewportSync("secondary", message);
     }
+
+    if (message.type === "settings-updated") {
+      void handleRuntimeSettingsUpdated();
+    }
   });
+}
+
+async function handleRuntimeSettingsUpdated() {
+  await loadRuntimeSettings();
+  applyRuntimeFeatureToggles();
+  setupWidthModeToggle();
+  setupThemeToggle();
+  setupCompareToggle();
+  setupTocToggle();
+
+  if (!state.runtimeSettings.enableCompare && state.compareMode) {
+    applyCompareMode(false);
+  }
+
+  if (!state.runtimeSettings.enableToc) {
+    state.panelPrefs.rightCollapsed = true;
+    writeStorage(storageKeys.rightPanelCollapsed, "true");
+    applyPanelStateFromPrefs();
+  }
+
+  if (!state.runtimeSettings.enableSlides && state.slideMode.active) {
+    setSlidesMode(false);
+  }
+
+  await loadTree();
+  await refreshOpenPanesAfterSettingsChange();
+}
+
+async function refreshOpenPanesAfterSettingsChange() {
+  var primaryUri = state.selectedUriByPane.primary;
+  var secondaryUri = state.selectedUriByPane.secondary;
+
+  if (primaryUri) {
+    await openDocument(primaryUri, state.selectedPathByPane.primary || "", "primary");
+  }
+
+  if (state.compareMode && secondaryUri) {
+    await openDocument(secondaryUri, state.selectedPathByPane.secondary || "", "secondary");
+  }
 }
 
 function applyEditorViewportSync(pane, message) {
@@ -1940,7 +2081,8 @@ async function postRenderEnhancements(container, pane, options) {
   if (heavy) {
     await renderMermaidDiagrams(container);
   }
-  attachHeadingAnchors(container);
+  attachHeadingAnchors(container, pane);
+  attachInDocumentHashLinkHandlers(container, pane);
   attachTaskCheckboxHandlers(container, pane);
   attachImageLightboxHandlers(container);
   validateInternalLinks(container, pane);
@@ -2000,7 +2142,7 @@ function resolveMermaidTheme() {
   return document.body.classList.contains("theme-dark") ? "dark" : "default";
 }
 
-function attachHeadingAnchors(container) {
+function attachHeadingAnchors(container, pane) {
   var headings = container.querySelectorAll("h1, h2, h3, h4, h5, h6");
   var usedIds = new Set();
 
@@ -2029,14 +2171,23 @@ function attachHeadingAnchors(container) {
     anchor.href = "#" + encodeURIComponent(uniqueId);
     anchor.textContent = "#";
     anchor.setAttribute("aria-label", "Link to section " + text);
-    anchor.addEventListener("click", createHeadingAnchorHandler(uniqueId));
+    anchor.addEventListener("click", createHeadingAnchorHandler(uniqueId, pane));
     heading.appendChild(anchor);
   }
 }
 
-function createHeadingAnchorHandler(headingId) {
+function createHeadingAnchorHandler(headingId, pane) {
   return function (event) {
     event.preventDefault();
+    var contentEl = paneContentElements[pane] || paneContentElements[state.activePane];
+    if (contentEl) {
+      setActivePane(pane);
+      var target = contentEl.querySelector("#" + cssEscape(headingId));
+      if (target) {
+        scrollTargetIntoPane(contentEl, target, true);
+      }
+    }
+
     var hash = "#" + encodeURIComponent(headingId);
     if (history && typeof history.replaceState === "function") {
       history.replaceState(null, "", hash);
@@ -2059,8 +2210,67 @@ function scrollToHashAnchor(contentEl) {
   var headingId = safeDecodeURIComponent(rawHash);
   var target = contentEl.querySelector("#" + cssEscape(headingId));
   if (target) {
-    target.scrollIntoView({ block: "start" });
+    scrollTargetIntoPane(contentEl, target, false);
   }
+}
+
+function scrollTargetIntoPane(contentEl, target, smooth) {
+  if (!contentEl || !target) {
+    return;
+  }
+
+  var targetTop = target.getBoundingClientRect().top;
+  var contentTop = contentEl.getBoundingClientRect().top;
+  var nextTop = contentEl.scrollTop + (targetTop - contentTop) - 8;
+  contentEl.scrollTo({
+    top: Math.max(0, nextTop),
+    behavior: smooth ? "smooth" : "auto"
+  });
+}
+
+function attachInDocumentHashLinkHandlers(container, pane) {
+  if (!container) {
+    return;
+  }
+
+  var links = container.querySelectorAll('a[href^="#"]');
+  for (var i = 0; i < links.length; i++) {
+    var link = links[i];
+    if (link.classList.contains("heading-anchor") || link.dataset.boundHashNav === "true") {
+      continue;
+    }
+
+    link.dataset.boundHashNav = "true";
+    link.addEventListener("click", createInDocumentHashLinkHandler(container, pane, link));
+  }
+}
+
+function createInDocumentHashLinkHandler(container, pane, link) {
+  return function (event) {
+    var href = link.getAttribute("href") || "";
+    var rawHash = href.slice(1);
+    if (!rawHash) {
+      return;
+    }
+
+    var headingId = safeDecodeURIComponent(rawHash);
+    var target = container.querySelector("#" + cssEscape(headingId));
+    if (!target) {
+      return;
+    }
+
+    event.preventDefault();
+    setActivePane(pane);
+    var contentEl = paneContentElements[pane] || container;
+    scrollTargetIntoPane(contentEl, target, true);
+
+    var hash = "#" + encodeURIComponent(headingId);
+    if (history && typeof history.replaceState === "function") {
+      history.replaceState(null, "", hash);
+    } else {
+      location.hash = hash;
+    }
+  };
 }
 
 function updateDocumentStats() {

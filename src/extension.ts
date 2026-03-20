@@ -33,6 +33,10 @@ class MirrorRuntime implements vscode.Disposable {
     await this.server.stop();
   }
 
+  public notifyConfigurationChanged(): void {
+    this.watcher?.publishSettingsUpdated();
+  }
+
   public dispose(): void {
     void this.stop();
     this.renderer.dispose();
@@ -88,6 +92,12 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("markdownMirror.stop", async () => {
       await runtime.stop();
       void vscode.window.showInformationMessage("Markdown Mirror stopped.");
+    }),
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      if (!event.affectsConfiguration("markdownMirror")) {
+        return;
+      }
+      runtime.notifyConfigurationChanged();
     })
   );
 

@@ -5,7 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { MarkdownRenderer } from "./renderer";
 
 interface WatcherMessage {
-  type: "connected" | "document-updated" | "document-deleted" | "viewport-updated";
+  type: "connected" | "document-updated" | "document-deleted" | "viewport-updated" | "settings-updated";
   uri?: string;
   relativePath?: string;
   html?: string;
@@ -70,6 +70,13 @@ export class MarkdownWatcher implements vscode.Disposable {
     this.renderDebounceTimers.clear();
 
     vscode.Disposable.from(...this.disposables).dispose();
+  }
+
+  public publishSettingsUpdated(): void {
+    this.broadcast({
+      type: "settings-updated",
+      timestamp: Date.now()
+    });
   }
 
   private schedulePublishFromEditor(document: vscode.TextDocument): void {

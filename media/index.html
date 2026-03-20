@@ -41,7 +41,10 @@
       </div>
       <nav id="tree" class="file-tree" aria-label="File tree"></nav>
       <section id="favorites-panel" class="favorites-panel" aria-label="Pinned files">
-        <header class="tree-root-label">Favorites</header>
+        <header class="favorites-header">
+          <span class="tree-root-label">Favorites</span>
+          <button id="favorites-toggle" class="favorites-toggle" type="button" aria-expanded="true" title="Collapse favorites">▼</button>
+        </header>
         <div id="favorites-tree" class="favorites-tree"></div>
       </section>
       <div class="sidebar-footer">
