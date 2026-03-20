@@ -2,6 +2,12 @@
 
 ![Markdown Mirror Banner](./banner.png)
 
+## Author
+
+Sai Teja Nagamothu  
+[![GitHub](https://img.shields.io/badge/GitHub-saiteja21-181717?logo=github&logoColor=white)](https://github.com/saiteja21)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-sai--teja--n-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/saiteja-n/)
+
 Live, local Markdown preview for your full workspace with instant browser updates and a file explorer tree.
 
 ## Why Markdown Mirror
@@ -219,9 +225,3 @@ Release policy:
 - Browser page looks stale:
 	- Refresh the browser tab once.
 	- Verify VS Code has write access to the workspace files.
-
-## Author
-
-Sai Teja Nagamothu  
-[![GitHub](https://img.shields.io/badge/GitHub-saiteja21-181717?logo=github&logoColor=white)](https://github.com/saiteja21)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-sai--teja--n-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/saiteja-n/)
