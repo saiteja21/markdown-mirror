@@ -16,7 +16,19 @@ const state = {
     enableMath: false,
     mermaidTheme: "default",
     customCssPath: "",
-    offlineMode: true
+    offlineMode: true,
+    defaultCompareMode: true,
+    defaultTocVisible: true,
+    defaultTheme: "light",
+    defaultWidthMode: "full",
+    enablePrint: true,
+    enableHtmlExport: true,
+    enableWordExport: true,
+    enableSlides: true,
+    enableCompare: true,
+    enableToc: true,
+    enableThemeToggle: true,
+    enableWidthToggle: true
   },
   panelPrefs: {
     leftWidth: 280,
@@ -148,6 +160,20 @@ async function loadRuntimeSettings() {
     state.runtimeSettings.mermaidTheme = normalizeMermaidTheme(payload && payload.mermaidTheme);
     state.runtimeSettings.customCssPath = payload && typeof payload.customCssPath === "string" ? payload.customCssPath : "";
     state.runtimeSettings.offlineMode = true;
+    state.runtimeSettings.defaultCompareMode = !(payload && payload.defaultCompareMode === false);
+    state.runtimeSettings.defaultTocVisible = !(payload && payload.defaultTocVisible === false);
+    state.runtimeSettings.defaultTheme = payload && payload.defaultTheme === "dark" ? constants.themeDark : constants.themeLight;
+    state.runtimeSettings.defaultWidthMode = payload && payload.defaultWidthMode === constants.widthModeReading
+      ? constants.widthModeReading
+      : constants.widthModeFull;
+    state.runtimeSettings.enablePrint = !(payload && payload.enablePrint === false);
+    state.runtimeSettings.enableHtmlExport = !(payload && payload.enableHtmlExport === false);
+    state.runtimeSettings.enableWordExport = !(payload && payload.enableWordExport === false);
+    state.runtimeSettings.enableSlides = !(payload && payload.enableSlides === false);
+    state.runtimeSettings.enableCompare = !(payload && payload.enableCompare === false);
+    state.runtimeSettings.enableToc = !(payload && payload.enableToc === false);
+    state.runtimeSettings.enableThemeToggle = !(payload && payload.enableThemeToggle === false);
+    state.runtimeSettings.enableWidthToggle = !(payload && payload.enableWidthToggle === false);
   } catch (_) {
     // Keep defaults when settings API is unavailable.
   }
@@ -163,6 +189,7 @@ function normalizeMermaidTheme(value) {
 
 async function bootstrap() {
   await loadRuntimeSettings();
+  applyRuntimeFeatureToggles();
   loadPinnedUris();
   loadPanelPrefs();
   setupPanelManager();
@@ -193,6 +220,32 @@ async function bootstrap() {
   });
 }
 
+function setControlVisibility(element, enabled) {
+  if (!element) {
+    return;
+  }
+  element.hidden = !enabled;
+}
+
+function applyRuntimeFeatureToggles() {
+  setControlVisibility(printToggleEl, state.runtimeSettings.enablePrint);
+  setControlVisibility(exportHtmlToggleEl, state.runtimeSettings.enableHtmlExport);
+  setControlVisibility(exportWordToggleEl, state.runtimeSettings.enableWordExport);
+  setControlVisibility(slidesToggleEl, state.runtimeSettings.enableSlides);
+  setControlVisibility(compareToggleEl, state.runtimeSettings.enableCompare);
+  setControlVisibility(tocToggleEl, state.runtimeSettings.enableToc);
+  setControlVisibility(themeToggleEl, state.runtimeSettings.enableThemeToggle);
+  setControlVisibility(widthToggleEl, state.runtimeSettings.enableWidthToggle);
+
+  if (!state.runtimeSettings.enableCompare) {
+    state.compareMode = false;
+  }
+
+  if (!state.runtimeSettings.enableToc) {
+    state.panelPrefs.rightCollapsed = true;
+  }
+}
+
 function loadPinnedUris() {
   var serialized = readStorage(storageKeys.pinnedUris, "[]");
   try {
@@ -221,7 +274,10 @@ function loadPanelPrefs() {
   );
 
   state.panelPrefs.leftCollapsed = readStorage(storageKeys.leftPanelCollapsed, "false") === "true";
-  state.panelPrefs.rightCollapsed = readStorage(storageKeys.rightPanelCollapsed, "true") === "true";
+  state.panelPrefs.rightCollapsed = readStorage(
+    storageKeys.rightPanelCollapsed,
+    state.runtimeSettings.defaultTocVisible ? "false" : "true"
+  ) === "true";
 }
 
 function setupPanelManager() {
@@ -492,7 +548,7 @@ function setupTreeControls() {
 }
 
 function setupPrintToggle() {
-  if (!printToggleEl) {
+  if (!printToggleEl || !state.runtimeSettings.enablePrint) {
     return;
   }
 
@@ -502,7 +558,7 @@ function setupPrintToggle() {
 }
 
 function setupExportHtml() {
-  if (!exportHtmlToggleEl) {
+  if (!exportHtmlToggleEl || !state.runtimeSettings.enableHtmlExport) {
     return;
   }
 
@@ -512,7 +568,7 @@ function setupExportHtml() {
 }
 
 function setupWordExport() {
-  if (!exportWordToggleEl || !wordExportModalEl || !wordExportListEl) {
+  if (!state.runtimeSettings.enableWordExport || !exportWordToggleEl || !wordExportModalEl || !wordExportListEl) {
     return;
   }
 
@@ -708,6 +764,13 @@ function collectDocsFromNodes(nodes, output) {
 }
 
 function setupSlidesMode() {
+  if (!state.runtimeSettings.enableSlides) {
+    if (slidesOverlayEl) {
+      slidesOverlayEl.hidden = true;
+    }
+    return;
+  }
+
   if (slidesToggleEl) {
     slidesToggleEl.addEventListener("click", function () {
       toggleSlidesMode();
@@ -929,18 +992,27 @@ function handleKeyboardShortcuts(event) {
   }
 
   if (key === "t" || key === "T") {
+    if (!state.runtimeSettings.enableToc) {
+      return;
+    }
     event.preventDefault();
     tocToggleEl.click();
     return;
   }
 
   if (key === "d" || key === "D") {
+    if (!state.runtimeSettings.enableThemeToggle) {
+      return;
+    }
     event.preventDefault();
     themeToggleEl.click();
     return;
   }
 
   if (key === "p" || key === "P") {
+    if (!state.runtimeSettings.enablePrint) {
+      return;
+    }
     event.preventDefault();
     window.print();
     return;
@@ -1094,7 +1166,12 @@ function openSiblingFile(direction) {
 }
 
 function setupWidthModeToggle() {
-  var initialMode = readStorage(storageKeys.widthMode, constants.widthModeFull);
+  if (!state.runtimeSettings.enableWidthToggle) {
+    applyWidthMode(constants.widthModeFull);
+    return;
+  }
+
+  var initialMode = readStorage(storageKeys.widthMode, state.runtimeSettings.defaultWidthMode || constants.widthModeFull);
   applyWidthMode(initialMode === constants.widthModeReading ? constants.widthModeReading : constants.widthModeFull);
 
   widthToggleEl.addEventListener("click", function () {
@@ -1113,7 +1190,12 @@ function applyWidthMode(mode) {
 }
 
 function setupThemeToggle() {
-  var initialTheme = readStorage(storageKeys.themeMode, constants.themeLight);
+  if (!state.runtimeSettings.enableThemeToggle) {
+    applyTheme(constants.themeLight);
+    return;
+  }
+
+  var initialTheme = readStorage(storageKeys.themeMode, state.runtimeSettings.defaultTheme || constants.themeLight);
   applyTheme(initialTheme === constants.themeDark ? constants.themeDark : constants.themeLight);
 
   themeToggleEl.addEventListener("click", function () {
@@ -1137,7 +1219,12 @@ function applyTheme(theme) {
 }
 
 function setupCompareToggle() {
-  var initialCompare = readStorage(storageKeys.compareMode, "false") === "true";
+  if (!state.runtimeSettings.enableCompare) {
+    applyCompareMode(false);
+    return;
+  }
+
+  var initialCompare = readStorage(storageKeys.compareMode, state.runtimeSettings.defaultCompareMode ? "true" : "false") === "true";
   applyCompareMode(initialCompare);
 
   compareToggleEl.addEventListener("click", function () {
@@ -1146,6 +1233,10 @@ function setupCompareToggle() {
 }
 
 function applyCompareMode(enabled) {
+  if (!state.runtimeSettings.enableCompare) {
+    enabled = false;
+  }
+
   state.compareMode = enabled;
   document.body.classList.toggle("compare-mode", enabled);
   compareToggleEl.classList.toggle("is-active", enabled);
@@ -1166,6 +1257,13 @@ function applyCompareMode(enabled) {
 }
 
 function setupTocToggle() {
+  if (!state.runtimeSettings.enableToc) {
+    state.panelPrefs.rightCollapsed = true;
+    writeStorage(storageKeys.rightPanelCollapsed, "true");
+    applyPanelStateFromPrefs();
+    return;
+  }
+
   tocToggleEl.addEventListener("click", function () {
     if (state.panelPrefs.rightCollapsed) {
       state.panelPrefs.rightCollapsed = false;

@@ -1,8 +1,8 @@
 {
   "name": "markdown-mirror",
-  "displayName": "Markdown Mirror",
-  "description": "Mirror workspace Markdown files into a live local web server with HDR updates.",
-  "version": "0.5.2",
+  "displayName": "Markdown Mirror - Live Markdown Preview",
+  "description": "Live Markdown preview for your full VS Code workspace with Mermaid, KaTeX, TOC, slides, and export.",
+  "version": "0.5.3",
   "publisher": "ForkedCode",
   "icon": "logo.png",
   "galleryBanner": {
@@ -12,15 +12,24 @@
   "license": "MIT",
   "keywords": [
     "markdown",
-    "preview",
-    "live",
-    "websocket",
-    "documentation"
+    "markdown preview",
+    "live preview",
+    "workspace markdown",
+    "documentation",
+    "mermaid",
+    "katex",
+    "toc",
+    "slides",
+    "export html",
+    "word export",
+    "sync scroll",
+    "vscode markdown"
   ],
   "engines": {
     "vscode": "^1.98.0"
   },
   "categories": [
+    "Visualization",
     "Other"
   ],
   "main": "./out/extension.js",
@@ -85,7 +94,16 @@
         "markdownMirror.rootPath": {
           "type": "string",
           "default": "",
-          "description": "Optional relative directory path inside each workspace folder to scope Markdown file discovery. Leave empty to scan all folders."
+          "description": "Legacy single-folder scope. Relative path only (for example docs or Compiler). Absolute paths and traversal segments are ignored.",
+          "deprecationMessage": "Use markdownMirror.rootPaths for multiple folder scopes."
+        },
+        "markdownMirror.rootPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Optional list of relative folder paths (for example [\"docs\", \"notes/specs\"]). Absolute paths and traversal segments are ignored. In multi-root workspaces, each path is resolved inside each workspace folder."
         },
         "markdownMirror.enableMath": {
           "type": "boolean",
@@ -131,6 +149,82 @@
           "type": "boolean",
           "default": true,
           "description": "Enforced local-only mode: external HTTP/HTTPS resources are blocked in preview and export flows."
+        },
+        "markdownMirror.defaultCompareMode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open Markdown Mirror in compare mode by default for new browser sessions."
+        },
+        "markdownMirror.defaultTocVisible": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the TOC panel by default for new browser sessions."
+        },
+        "markdownMirror.defaultTheme": {
+          "type": "string",
+          "enum": [
+            "light",
+            "dark"
+          ],
+          "default": "light",
+          "markdownEnumDescriptions": [
+            "Start preview in light mode.",
+            "Start preview in dark mode."
+          ],
+          "description": "Default preview theme used when no saved browser preference exists."
+        },
+        "markdownMirror.defaultWidthMode": {
+          "type": "string",
+          "enum": [
+            "full",
+            "reading"
+          ],
+          "default": "full",
+          "markdownEnumDescriptions": [
+            "Use full-width layout by default.",
+            "Use reading-width layout by default."
+          ],
+          "description": "Default content width mode used when no saved browser preference exists."
+        },
+        "markdownMirror.enablePrint": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show and enable Print / PDF action in preview."
+        },
+        "markdownMirror.enableHtmlExport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show and enable Export HTML action in preview."
+        },
+        "markdownMirror.enableWordExport": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show and enable Export Word action in preview."
+        },
+        "markdownMirror.enableSlides": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show and enable Slides mode action in preview."
+        },
+        "markdownMirror.enableCompare": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show and enable Compare mode action in preview."
+        },
+        "markdownMirror.enableToc": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show and enable TOC panel action in preview."
+        },
+        "markdownMirror.enableThemeToggle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show and enable light/dark theme toggle in preview."
+        },
+        "markdownMirror.enableWidthToggle": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show and enable reading/full width toggle in preview."
         }
       }
     }

@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.3] - 2026-03-20
+
+### Changed
+
+- Refined Marketplace listing metadata in `package.json` (display name, description, keywords, and category selection).
+- Updated README opening copy to better communicate core use cases and feature value.
+
 ## [0.5.2] - 2026-03-19
 
 ### Fixed

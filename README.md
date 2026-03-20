@@ -8,7 +8,9 @@ Sai Teja Nagamothu
 [![GitHub](https://img.shields.io/badge/GitHub-saiteja21-181717?logo=github&logoColor=white)](https://github.com/saiteja21)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-sai--teja--n-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/saiteja-n/)
 
-Live, local Markdown preview for your full workspace with instant browser updates and a file explorer tree.
+Live Markdown preview for your full VS Code workspace with instant browser updates, file explorer navigation, Mermaid diagrams, KaTeX math, TOC, slides, and export tools to pdf, MS word.
+
+Perfect for docs-driven teams, technical writers, and engineers who want a docs-site style workflow directly from local markdown files.
 
 ## Why Markdown Mirror
 
@@ -23,7 +25,7 @@ It scans markdown files, serves a mirrored structure, and updates the browser pr
 - TOC sidebar for heading-based navigation in the active pane
 - Light/Dark preview theme toggle
 - Print / PDF export via browser print flow
-- KaTeX math rendering (optional, off by default)
+- KaTeX math rendering (configurable)
 - Word/character count and reading-time stats bar
 - Keyboard shortcuts for fast navigation and actions
 - Heading anchor links for deep-linking sections
@@ -118,7 +120,7 @@ You can also open Settings (JSON) and set values directly.
 
 Default behavior (recommended for most users):
 
-- Leave `markdownMirror.rootPath` empty.
+- Leave `markdownMirror.rootPaths` empty.
 - Markdown Mirror uses the currently open workspace root and discovers all markdown files under it.
 
 Example (default behavior):
@@ -132,14 +134,29 @@ Example (default behavior):
 
 Optional scoped-folder example (only if you want to limit discovery):
 
-- Set `markdownMirror.rootPath` to a folder relative to your workspace root.
-- Example below scans only `<workspace>/Compiler`.
+- Set `markdownMirror.rootPaths` to one or more folders relative to your workspace root.
+- Example below scans `<workspace>/ProjectDocs` and `<workspace>/TeamNotes`.
 
 ```json
 {
-	"markdownMirror.rootPath": "Compiler"
+	"markdownMirror.rootPaths": [
+		"ProjectDocs",
+		"TeamNotes"
+	]
 }
 ```
+
+Backward compatibility:
+
+- `markdownMirror.rootPath` still works as a legacy fallback when `markdownMirror.rootPaths` is empty.
+
+Path format rules:
+
+- Paths are relative to the root folder of each workspace folder (for example `ProjectDocs`, `guides/release-notes`, `knowledge/base`).
+- Do not use absolute paths (for example `C:/repo/docs` or `/repo/docs`).
+- Do not use path traversal segments (`..` or `.`).
+- In multi-root workspaces, each entry is resolved inside each workspace folder.
+- Default setting: `markdownMirror.rootPaths` is empty (`[]`), which means scan all markdown files under each workspace folder.
 
 ## Settings
 
@@ -155,8 +172,13 @@ Optional scoped-folder example (only if you want to limit discovery):
 	- `safe` (default): sanitize rendered HTML.
 	- `trusted`: allow raw HTML from markdown without sanitization (trusted content only).
 - `markdownMirror.rootPath`
+	- Legacy single-path fallback.
+	- Used only when `markdownMirror.rootPaths` is empty.
+	- Relative path only; absolute paths and traversal segments are ignored.
+- `markdownMirror.rootPaths`
 	- Empty (default): use the currently open workspace root and scan all markdown files.
-	- Relative path (for example `docs`): only render markdown tree from that folder.
+	- Array of relative paths (for example `["docs", "notes"]`): only render markdown tree from those folders.
+	- Relative paths only; absolute paths and traversal segments are ignored.
 - `markdownMirror.enableMath`
 	- `true` (default): enable KaTeX rendering for inline and block math.
 	- `false`: disable math rendering.
@@ -171,6 +193,34 @@ Optional scoped-folder example (only if you want to limit discovery):
 - `markdownMirror.customCssPath`
 	- Empty (default): use built-in styles only.
 	- Relative path (for example `docs/preview.css`): inject custom CSS from workspace into preview.
+- `markdownMirror.offlineMode`
+	- `true` (default): block external HTTP/HTTPS resources in preview/export flows.
+- `markdownMirror.defaultCompareMode`
+	- `true` (default): open preview in compare mode for new browser sessions.
+- `markdownMirror.defaultTocVisible`
+	- `true` (default): show TOC panel by default for new browser sessions.
+- `markdownMirror.defaultTheme`
+	- `light` (default): start preview in light mode.
+	- `dark`: start preview in dark mode.
+- `markdownMirror.defaultWidthMode`
+	- `full` (default): start with full-width content.
+	- `reading`: start with reading-width content.
+- `markdownMirror.enablePrint`
+	- `true` (default): show Print / PDF action.
+- `markdownMirror.enableHtmlExport`
+	- `true` (default): show Export HTML action.
+- `markdownMirror.enableWordExport`
+	- `true` (default): show Export Word action.
+- `markdownMirror.enableSlides`
+	- `true` (default): show Slides mode action.
+- `markdownMirror.enableCompare`
+	- `true` (default): show Compare mode action.
+- `markdownMirror.enableToc`
+	- `true` (default): show TOC panel toggle.
+- `markdownMirror.enableThemeToggle`
+	- `true` (default): show Light/Dark theme toggle.
+- `markdownMirror.enableWidthToggle`
+	- `true` (default): show Reading/Full width toggle.
 
 Manual command start always opens the browser.
 

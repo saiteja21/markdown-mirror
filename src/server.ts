@@ -132,12 +132,38 @@ export class MirrorServer implements vscode.Disposable {
       const enableMath = config.get<boolean>("enableMath", false);
       const customCssPath = (config.get<string>("customCssPath", "") || "").trim();
       const offlineMode = true;
+      const defaultCompareMode = config.get<boolean>("defaultCompareMode", true);
+      const defaultTocVisible = config.get<boolean>("defaultTocVisible", true);
+      const defaultThemeRaw = (config.get<string>("defaultTheme", "light") || "light").toLowerCase();
+      const defaultWidthModeRaw = (config.get<string>("defaultWidthMode", "full") || "full").toLowerCase();
+      const defaultTheme = defaultThemeRaw === "dark" ? "dark" : "light";
+      const defaultWidthMode = defaultWidthModeRaw === "reading" ? "reading" : "full";
+      const enablePrint = config.get<boolean>("enablePrint", true);
+      const enableHtmlExport = config.get<boolean>("enableHtmlExport", true);
+      const enableWordExport = config.get<boolean>("enableWordExport", true);
+      const enableSlides = config.get<boolean>("enableSlides", true);
+      const enableCompare = config.get<boolean>("enableCompare", true);
+      const enableToc = config.get<boolean>("enableToc", true);
+      const enableThemeToggle = config.get<boolean>("enableThemeToggle", true);
+      const enableWidthToggle = config.get<boolean>("enableWidthToggle", true);
 
       res.json({
         enableMath,
         mermaidTheme,
         customCssPath,
-        offlineMode
+        offlineMode,
+        defaultCompareMode,
+        defaultTocVisible,
+        defaultTheme,
+        defaultWidthMode,
+        enablePrint,
+        enableHtmlExport,
+        enableWordExport,
+        enableSlides,
+        enableCompare,
+        enableToc,
+        enableThemeToggle,
+        enableWidthToggle
       });
     });
 
@@ -319,11 +345,13 @@ export class MirrorServer implements vscode.Disposable {
 
   private async buildWorkspaceTree(): Promise<WorkspaceTreeNode[]> {
     const folders = vscode.workspace.workspaceFolders ?? [];
-    const rootPathSetting = this.getRootPathSetting();
+    const rootPathSettings = this.getRootPathSettings();
 
-    const rootCandidates = await Promise.all(folders.map(async (folder) => {
-      return this.resolveTreeRoot(folder, rootPathSetting);
-    }));
+    const rootCandidates = (
+      await Promise.all(folders.map(async (folder) => {
+        return this.resolveTreeRoots(folder, rootPathSettings);
+      }))
+    ).flat();
 
     const roots = await Promise.all(
       rootCandidates
@@ -383,9 +411,56 @@ export class MirrorServer implements vscode.Disposable {
     return nodes;
   }
 
-  private getRootPathSetting(): string {
-    const value = vscode.workspace.getConfiguration("markdownMirror").get<string>("rootPath", "");
-    return (value || "").trim().replace(/\\/g, "/");
+  private getRootPathSettings(): string[] {
+    const config = vscode.workspace.getConfiguration("markdownMirror");
+    const configured = config.get<string[]>("rootPaths", []);
+    const normalizedMulti = Array.isArray(configured)
+      ? configured
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim().replace(/\\/g, "/"))
+          .filter((value, index, all) => value.length > 0 && all.indexOf(value) === index)
+      : [];
+
+    if (normalizedMulti.length > 0) {
+      return normalizedMulti;
+    }
+
+    // Backward compatibility for existing users of the single root setting.
+    const single = (config.get<string>("rootPath", "") || "").trim().replace(/\\/g, "/");
+    return single ? [single] : [];
+  }
+
+  private async resolveTreeRoots(
+    folder: vscode.WorkspaceFolder,
+    rootPathSettings: string[]
+  ): Promise<Array<{ folderName: string; rootUri: vscode.Uri; relativeBase: string }>> {
+    if (rootPathSettings.length === 0) {
+      return [{
+        folderName: folder.name,
+        rootUri: folder.uri,
+        relativeBase: ""
+      }];
+    }
+
+    const resolved = await Promise.all(rootPathSettings.map(async (rootPathSetting) => {
+      return this.resolveTreeRoot(folder, rootPathSetting);
+    }));
+
+    const deduped: Array<{ folderName: string; rootUri: vscode.Uri; relativeBase: string }> = [];
+    const seen = new Set<string>();
+    for (const candidate of resolved) {
+      if (!candidate) {
+        continue;
+      }
+      const key = candidate.rootUri.toString();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      deduped.push(candidate);
+    }
+
+    return deduped;
   }
 
   private async resolveTreeRoot(
