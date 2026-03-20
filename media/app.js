@@ -59,10 +59,6 @@ const state = {
     primary: 0,
     secondary: 0
   },
-  lastUpdatedAtByPane: {
-    primary: 0,
-    secondary: 0
-  },
   openTabs: [],
   slideMode: {
     active: false,
@@ -141,7 +137,6 @@ const favoritesToggleEl = document.getElementById("favorites-toggle");
 const favoritesTreeEl = document.getElementById("favorites-tree");
 const fileCountEl = document.getElementById("file-count");
 const liveUpdatingEl = document.getElementById("live-updating");
-const lastUpdatedEl = document.getElementById("last-updated");
 const backToTopEl = document.getElementById("back-to-top");
 const lightboxEl = document.getElementById("lightbox");
 const lightboxImageEl = document.getElementById("lightbox-image");
@@ -240,7 +235,6 @@ async function bootstrap() {
   setupBackToTop();
   setupLightbox();
   setupScrollSync();
-  startLastUpdatedTicker();
   setupKeyboardShortcuts();
   setupWidthModeToggle();
   setupThemeToggle();
@@ -1785,7 +1779,6 @@ async function openDocument(uri, relativePath, pane) {
   var payload = await response.json();
   state.selectedUriByPane[targetPane] = payload.uri;
   state.selectedPathByPane[targetPane] = relativePath || payload.relativePath || "Untitled";
-  state.lastUpdatedAtByPane[targetPane] = Date.now();
   rememberTab(payload.uri, state.selectedPathByPane[targetPane]);
 
   paneContentElements[targetPane].innerHTML = payload.html || "";
@@ -1817,7 +1810,6 @@ async function openDocument(uri, relativePath, pane) {
   refreshSelection();
   updateBreadcrumb();
   updateDocumentStats();
-  updateLastUpdatedLabel();
 
   if (targetPane === state.activePane) {
     rebuildTocForActivePane();
@@ -2221,7 +2213,6 @@ async function updatePaneIfMatching(pane, uri, html, reason, changedLine) {
   }
 
   paneContentElements[pane].innerHTML = html;
-  state.lastUpdatedAtByPane[pane] = Date.now();
   if (typeof changedLine === "number" && changedLine > 0) {
     state.recentEditLineByPane[pane] = changedLine;
     state.recentEditSetAtByPane[pane] = Date.now();
@@ -2240,7 +2231,6 @@ async function updatePaneIfMatching(pane, uri, html, reason, changedLine) {
   if (pane === state.activePane) {
     rebuildTocForActivePane();
     updateDocumentStats();
-    updateLastUpdatedLabel();
   }
 
   if (state.editedUris.has(uri)) {
@@ -2280,27 +2270,6 @@ function isPaneRenderVersionCurrent(pane, version) {
   }
 
   return state.paneRenderVersion[pane] === version;
-}
-
-function startLastUpdatedTicker() {
-  updateLastUpdatedLabel();
-  setInterval(updateLastUpdatedLabel, 1000);
-}
-
-function updateLastUpdatedLabel() {
-  if (!lastUpdatedEl) {
-    return;
-  }
-
-  var activePane = state.activePane || "primary";
-  var ts = state.lastUpdatedAtByPane[activePane] || 0;
-  if (!ts) {
-    lastUpdatedEl.textContent = "Last updated: --";
-    return;
-  }
-
-  var deltaSeconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
-  lastUpdatedEl.textContent = deltaSeconds <= 1 ? "Last updated: just now" : "Last updated: " + String(deltaSeconds) + "s ago";
 }
 
 function scrollToSourceLine(container, line) {

@@ -491,12 +491,6 @@ body.left-panel-collapsed .tabs-bar {
   animation: live-pulse 1s ease-in-out infinite;
 }
 
-.last-updated {
-  font-size: 11px;
-  color: #8ea2bd;
-  white-space: nowrap;
-}
-
 @keyframes live-pulse {
   0%, 100% { opacity: 0.45; }
   50% { opacity: 1; }
@@ -1464,10 +1458,6 @@ body.theme-dark .fm-row dd,
 body.theme-dark .frontmatter-card summary,
 body.theme-dark .file-count {
   color: #dbe6f5;
-}
-
-body.theme-dark .last-updated {
-  color: #9fb3cb;
 }
 
 body.theme-dark .live-updating {
