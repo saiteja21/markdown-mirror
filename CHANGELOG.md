@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.5] - 2026-03-20
+
+### Fixed
+
+- Fixed TOC edited-section highlighting by preserving `data-source-line` attributes through HTML sanitization.
+- Fixed TOC readability so heading anchor symbols are not included in TOC item labels.
+- Fixed stale render race conditions by adding pane render-version guards for async open/live-update flows.
+- Fixed edited highlight lifecycle so section highlight is not cleared immediately by programmatic scroll.
+- Fixed task-checkbox writeback to preserve original line endings and avoid formatting churn on Windows.
+
+### Changed
+
+- Removed "Last updated" footer indicator from the preview UI.
+
 ## [0.5.4] - 2026-03-20
 
 ### Fixed

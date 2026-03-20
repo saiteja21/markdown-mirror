@@ -2,7 +2,7 @@
   "name": "markdown-mirror",
   "displayName": "Markdown Mirror - Live Markdown Preview",
   "description": "Live Markdown preview for your full VS Code workspace with Mermaid, KaTeX, TOC, slides, and export.",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "publisher": "ForkedCode",
   "icon": "logo.png",
   "galleryBanner": {
