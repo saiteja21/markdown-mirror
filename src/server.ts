@@ -119,7 +119,7 @@ export class MirrorServer implements vscode.Disposable {
           res.status(403).json({ error: "Forbidden. Localhost clients only." });
           return;
         }
-        res.setHeader("Access-Control-Allow-Origin", `http://${this.host}:${this.getPortSafe()}`);
+        res.setHeader("Access-Control-Allow-Origin", "*");
         next();
       });
 
