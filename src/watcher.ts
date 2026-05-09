@@ -22,6 +22,7 @@ export class MarkdownWatcher implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly renderDebounceTimers = new Map<string, NodeJS.Timeout>();
   private readonly pendingChangedLineByUri = new Map<string, number>();
+  private viewportThrottleTimer: NodeJS.Timeout | undefined;
 
   public constructor(
     private readonly httpServer: http.Server,
@@ -53,7 +54,7 @@ export class MarkdownWatcher implements vscode.Disposable {
         if (event.textEditor.document.languageId !== "markdown") {
           return;
         }
-        this.publishViewport(event.textEditor);
+        this.throttledPublishViewport(event.textEditor);
       }),
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (!editor || editor.document.languageId !== "markdown") {
@@ -157,6 +158,17 @@ export class MarkdownWatcher implements vscode.Disposable {
     return Number.isFinite(minLine) ? minLine : 0;
   }
 
+  private throttledPublishViewport(editor: vscode.TextEditor): void {
+    if (this.viewportThrottleTimer) {
+      return;
+    }
+
+    this.viewportThrottleTimer = setTimeout(() => {
+      this.viewportThrottleTimer = undefined;
+      this.publishViewport(editor);
+    }, 60);
+  }
+
   private publishViewport(editor: vscode.TextEditor): void {
     const visibleRange = editor.visibleRanges[0];
     if (!visibleRange) {
@@ -174,6 +186,10 @@ export class MarkdownWatcher implements vscode.Disposable {
   }
 
   private broadcast(message: WatcherMessage): void {
+    if (this.wsServer.clients.size === 0) {
+      return;
+    }
+
     const payload = JSON.stringify(message);
     for (const client of this.wsServer.clients) {
       if (client.readyState === WebSocket.OPEN) {

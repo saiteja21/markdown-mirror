@@ -2,7 +2,7 @@
   "name": "markdown-mirror",
   "displayName": "Markdown Mirror - Live Markdown Preview",
   "description": "Live Markdown preview for your full VS Code workspace with Mermaid, KaTeX, TOC, slides, and export.",
-  "version": "0.5.5",
+  "version": "0.5.9",
   "publisher": "ForkedCode",
   "icon": "logo.png",
   "galleryBanner": {
@@ -37,6 +37,12 @@
     "onStartupFinished",
     "workspaceContains:**/*.md",
     "onCommand:markdownMirror.start",
+    "onCommand:markdownMirror.openNativePreview",
+    "onCommand:markdownMirror.openActiveInPreview",
+    "onCommand:markdownMirror.runDocumentAudit",
+    "onCommand:markdownMirror.runWorkspaceAudit",
+    "onCommand:markdownMirror.findHeading",
+    "onCommand:markdownMirror.validateLinks",
     "onCommand:markdownMirror.stop"
   ],
   "contributes": {
@@ -46,8 +52,127 @@
         "title": "Markdown Mirror: Start"
       },
       {
+        "command": "markdownMirror.openNativePreview",
+        "title": "Markdown Mirror: Open Preview"
+      },
+      {
         "command": "markdownMirror.stop",
         "title": "Markdown Mirror: Stop"
+      },
+      {
+        "command": "markdownMirror.openInPreview",
+        "title": "Markdown Mirror: Open in Preview",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "markdownMirror.exportToWord",
+        "title": "Markdown Mirror: Export to Word",
+        "icon": "$(export)"
+      },
+      {
+        "command": "markdownMirror.openActiveInPreview",
+        "title": "Markdown Mirror: Preview Active File",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "markdownMirror.refreshFileTree",
+        "title": "Markdown Mirror: Refresh Files",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "markdownMirror.refreshToc",
+        "title": "Markdown Mirror: Refresh TOC",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "markdownMirror.revealHeadingInPreview",
+        "title": "Markdown Mirror: Go to Heading in Preview",
+        "icon": "$(symbol-key)"
+      },
+      {
+        "command": "markdownMirror.revealHeadingInEditor",
+        "title": "Markdown Mirror: Go to Heading in Editor",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "markdownMirror.exportHtml",
+        "title": "Markdown Mirror: Export HTML",
+        "icon": "$(export)"
+      },
+      {
+        "command": "markdownMirror.printPreview",
+        "title": "Markdown Mirror: Print / PDF",
+        "icon": "$(print)"
+      },
+      {
+        "command": "markdownMirror.openCompareMode",
+        "title": "Markdown Mirror: Compare Mode",
+        "icon": "$(split-horizontal)"
+      },
+      {
+        "command": "markdownMirror.openSlidesMode",
+        "title": "Markdown Mirror: Slides Mode",
+        "icon": "$(device-camera-video)"
+      },
+      {
+        "command": "markdownMirror.runDocumentAudit",
+        "title": "Markdown Mirror: Review Document",
+        "icon": "$(report)"
+      },
+      {
+        "command": "markdownMirror.openReviewMode",
+        "title": "Markdown Mirror: Review Mode",
+        "icon": "$(preview)"
+      },
+      {
+        "command": "markdownMirror.runWorkspaceAudit",
+        "title": "Markdown Mirror: Review Workspace",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "markdownMirror.validateLinks",
+        "title": "Markdown Mirror: Validate Links",
+        "icon": "$(link)"
+      },
+      {
+        "command": "markdownMirror.findHeading",
+        "title": "Markdown Mirror: Find Heading",
+        "icon": "$(search)"
+      },
+      {
+        "command": "markdownMirror.showBacklinks",
+        "title": "Markdown Mirror: Show Backlinks",
+        "icon": "$(references)"
+      },
+      {
+        "command": "markdownMirror.toggleFocusMode",
+        "title": "Markdown Mirror: Toggle Focus Mode",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "markdownMirror.exportHtmlWithProfile",
+        "title": "Markdown Mirror: Export HTML with Profile",
+        "icon": "$(export)"
+      },
+      {
+        "command": "markdownMirror.composeWorkspaceBundle",
+        "title": "Markdown Mirror: Compose Bundle",
+        "icon": "$(files)"
+      },
+      {
+        "command": "markdownMirror.toggleSetting",
+        "title": "Markdown Mirror: Toggle Setting",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "markdownMirror.copyServerUrl",
+        "title": "Markdown Mirror: Copy Server URL",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "markdownMirror.shareViaTunnel",
+        "title": "Markdown Mirror: Share via Dev Tunnel",
+        "icon": "$(globe)"
       }
     ],
     "configuration": {
@@ -72,6 +197,55 @@
             "Never open browser automatically."
           ],
           "description": "Controls browser auto-open behavior during auto-start. Manual Start always opens the browser."
+        },
+        "markdownMirror.hostMode": {
+          "type": "string",
+          "enum": [
+            "browser",
+            "vscode",
+            "both"
+          ],
+          "default": "vscode",
+          "markdownEnumDescriptions": [
+            "Open Markdown Mirror only in an external browser.",
+            "Open Markdown Mirror only inside a native VS Code webview panel.",
+            "Open Markdown Mirror in both VS Code native panel and external browser."
+          ],
+          "description": "Controls where the preview UI is hosted when Markdown Mirror starts."
+        },
+        "markdownMirror.nativeFollowVsCodeTheme": {
+          "type": "boolean",
+          "default": true,
+          "description": "When host mode includes VS Code, mirror the active VS Code light/dark theme in native preview."
+        },
+        "markdownMirror.nativeLockThemeToggle": {
+          "type": "boolean",
+          "default": true,
+          "description": "When native theme sync is enabled, lock the in-preview light/dark toggle so VS Code theme remains the source of truth."
+        },
+        "markdownMirror.nativeUiProfile": {
+          "type": "string",
+          "enum": [
+            "focused",
+            "classic"
+          ],
+          "default": "focused",
+          "markdownEnumDescriptions": [
+            "Minimal native layout: reduced chrome, single-pane emphasis, and lower visual clutter.",
+            "Full browser-style layout inside native host."
+          ],
+          "description": "Controls native preview layout style when running inside VS Code."
+        },
+        "markdownMirror.enableQualityDiagnostics": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show live quality diagnostics for markdown files in the Problems panel."
+        },
+        "markdownMirror.maxLineLength": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Line-length limit used by Mirror quality checks. Set 0 to disable this check."
         },
         "markdownMirror.enableMermaid": {
           "type": "boolean",
@@ -106,6 +280,15 @@
           },
           "default": [],
           "description": "Optional list of relative folder paths (for example [\"docs\", \"notes/specs\"]). Absolute paths and traversal segments are ignored. In multi-root workspaces, each path is resolved inside each workspace folder."
+        },
+        "markdownMirror.excludePaths": {
+          "type": "array",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "List of relative folder or file paths to exclude from the file tree and browser sidebar (for example [\"drafts\", \"archive/old-specs\"]). Glob patterns like \"**/private\" are also supported."
         },
         "markdownMirror.enableMath": {
           "type": "boolean",
@@ -147,14 +330,9 @@
           "default": "",
           "description": "Optional relative CSS file path inside workspace to inject into browser preview."
         },
-        "markdownMirror.offlineMode": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enforced local-only mode: external HTTP/HTTPS resources are blocked in preview and export flows."
-        },
         "markdownMirror.defaultCompareMode": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Open Markdown Mirror in compare mode by default for new browser sessions."
         },
         "markdownMirror.defaultTocVisible": {
@@ -227,8 +405,157 @@
           "type": "boolean",
           "default": true,
           "description": "Show and enable reading/full width toggle in preview."
+        },
+        "markdownMirror.startExplorerCollapsed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Start browser preview with the file explorer sidebar collapsed."
+        },
+        "markdownMirror.port": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Fixed port number for the preview server. Set 0 for auto-assign. Use a fixed port for dev tunnel sharing."
+        },
+        "markdownMirror.defaultFilePath": {
+          "type": "string",
+          "default": "",
+          "description": "Relative path (e.g. README.md) of the file to open automatically on browser launch. Leave empty to use normal selection."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "markdownMirrorExplorer",
+          "title": "Markdown Mirror",
+          "icon": "$(book)"
+        }
+      ]
+    },
+    "views": {
+      "markdownMirrorExplorer": [
+        {
+          "id": "markdownMirror.fileTree",
+          "name": "Markdown Files"
+        },
+        {
+          "id": "markdownMirror.tocTree",
+          "name": "Table of Contents"
+        },
+        {
+          "id": "markdownMirror.settingsTree",
+          "name": "Quick Settings"
+        }
+      ]
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "markdownMirror.openActiveInPreview",
+          "group": "navigation",
+          "when": "resourceExtname == .md"
+        },
+        {
+          "command": "markdownMirror.exportHtml",
+          "group": "1_export",
+          "when": "resourceExtname == .md && config.markdownMirror.enableHtmlExport"
+        },
+        {
+          "command": "markdownMirror.exportToWord",
+          "group": "1_export",
+          "when": "resourceExtname == .md && config.markdownMirror.enableWordExport"
+        },
+        {
+          "command": "markdownMirror.printPreview",
+          "group": "1_export",
+          "when": "resourceExtname == .md && config.markdownMirror.enablePrint"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "markdownMirror.openActiveInPreview",
+          "when": "view == markdownMirror.fileTree",
+          "group": "navigation"
+        },
+        {
+          "command": "markdownMirror.refreshFileTree",
+          "when": "view == markdownMirror.fileTree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "markdownMirror.refreshToc",
+          "when": "view == markdownMirror.tocTree",
+          "group": "navigation"
+        },
+        {
+          "command": "markdownMirror.runWorkspaceAudit",
+          "when": "view == markdownMirror.fileTree",
+          "group": "navigation@2"
+        },
+        {
+          "command": "markdownMirror.composeWorkspaceBundle",
+          "when": "view == markdownMirror.fileTree",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "markdownMirror.openInPreview",
+          "when": "view == markdownMirror.fileTree && viewItem == markdownMirror.file",
+          "group": "inline"
+        },
+        {
+          "command": "markdownMirror.showBacklinks",
+          "when": "view == markdownMirror.fileTree && viewItem == markdownMirror.file",
+          "group": "1_actions"
+        },
+        {
+          "command": "markdownMirror.exportHtml",
+          "when": "view == markdownMirror.fileTree && viewItem == markdownMirror.file",
+          "group": "2_export"
+        },
+        {
+          "command": "markdownMirror.exportToWord",
+          "when": "view == markdownMirror.fileTree && viewItem == markdownMirror.file",
+          "group": "2_export"
+        },
+        {
+          "command": "markdownMirror.revealHeadingInPreview",
+          "when": "view == markdownMirror.tocTree && viewItem == markdownMirror.tocHeading",
+          "group": "inline"
+        },
+        {
+          "command": "markdownMirror.revealHeadingInEditor",
+          "when": "view == markdownMirror.tocTree && viewItem == markdownMirror.tocHeading",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "markdownMirror.openInPreview",
+          "when": "resourceExtname == .md",
+          "group": "navigation@99"
+        },
+        {
+          "command": "markdownMirror.start",
+          "when": "resourceExtname == .md",
+          "group": "navigation@100"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "markdownMirror.openActiveInPreview",
+          "when": "resourceExtname == .md",
+          "group": "navigation@99"
+        },
+        {
+          "command": "markdownMirror.start",
+          "when": "resourceExtname == .md",
+          "group": "navigation@100"
+        }
+      ]
     }
   },
   "scripts": {

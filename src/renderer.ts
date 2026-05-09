@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import * as path from "path";
+import * as fsPromises from "fs/promises";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
 import sanitizeHtml from "sanitize-html";
@@ -9,6 +11,7 @@ export interface RenderRequest {
   markdown: string;
   documentUri: vscode.Uri;
   assetBaseUrl: string;
+  embedImages?: boolean;
 }
 
 export class MarkdownRenderer implements vscode.Disposable {
@@ -42,6 +45,16 @@ export class MarkdownRenderer implements vscode.Disposable {
       if (token.map && token.map.length > 0) {
         token.attrSet("data-source-line", String(token.map[0] + 1));
       }
+
+      const next = tokens[idx + 1];
+      if (next?.type === "inline" && next.content) {
+        const base = this.slugifyHeading(next.content);
+        const counts = this.getHeadingSlugMap(env);
+        const count = counts.get(base) ?? 0;
+        counts.set(base, count + 1);
+        token.attrSet("id", count === 0 ? base : `${base}-${count}`);
+      }
+
       return self.renderToken(tokens, idx, options);
     };
 
@@ -68,10 +81,11 @@ export class MarkdownRenderer implements vscode.Disposable {
 
   public render(request: RenderRequest): string {
     const parsed = matter(request.markdown);
-    const markdown = parsed.content;
+    const markdown = this.normalizeWikiLinks(this.normalizeCallouts(this.normalizeAzureDevOpsMermaidContainers(parsed.content)));
     const env = {
       documentUri: request.documentUri,
-      assetBaseUrl: request.assetBaseUrl
+      assetBaseUrl: request.assetBaseUrl,
+      headingSlugCounts: new Map<string, number>()
     };
 
     const tokens = this.md.parse(markdown, env);
@@ -81,13 +95,74 @@ export class MarkdownRenderer implements vscode.Disposable {
     return this.applyHtmlMode(frontmatterCard + rawHtml);
   }
 
+  public async renderWithEmbeddedImages(request: RenderRequest): Promise<string> {
+    const parsed = matter(request.markdown);
+    const markdown = this.normalizeWikiLinks(this.normalizeCallouts(this.normalizeAzureDevOpsMermaidContainers(parsed.content)));
+    const env = {
+      documentUri: request.documentUri,
+      assetBaseUrl: request.assetBaseUrl,
+      headingSlugCounts: new Map<string, number>()
+    };
+
+    const tokens = this.md.parse(markdown, env);
+    await this.embedImageSources(tokens, request.documentUri);
+    const rawHtml = this.md.renderer.render(tokens, this.md.options, env);
+    const frontmatterCard = this.renderFrontmatterCard(parsed.data);
+    return this.applyHtmlMode(frontmatterCard + rawHtml);
+  }
+
   public dispose(): void {
     // No unmanaged resources to release currently.
   }
 
-  private rewriteImageSources(tokens: MarkdownIt.Token[], documentUri: vscode.Uri, assetBaseUrl: string): void {
-    const offlineMode = this.isOfflineModeEnabled();
+  private static readonly EMBED_MIME: Record<string, string> = {
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".ico": "image/x-icon", ".svg": "image/svg+xml"
+  };
 
+  private async embedImageSources(tokens: MarkdownIt.Token[], documentUri: vscode.Uri): Promise<void> {
+    const docDir = path.dirname(documentUri.fsPath);
+
+    for (const token of tokens) {
+      if (token.type === "inline" && token.children) {
+        await this.embedImageSources(token.children, documentUri);
+        continue;
+      }
+
+      if (token.type !== "image") {
+        continue;
+      }
+
+      const source = token.attrGet("src");
+      if (!source || !this.isRelativeAsset(source)) {
+        continue;
+      }
+
+      try {
+        const absolutePath = path.resolve(docDir, source);
+        const ext = path.extname(absolutePath).toLowerCase();
+        const mime = MarkdownRenderer.EMBED_MIME[ext];
+        if (!mime) {
+          continue;
+        }
+
+        // Skip files larger than 10MB to prevent memory issues
+        const stat = await fsPromises.stat(absolutePath);
+        if (stat.size > 10 * 1024 * 1024) {
+          continue;
+        }
+
+        const data = await fsPromises.readFile(absolutePath);
+        const base64 = data.toString("base64");
+        token.attrSet("src", `data:${mime};base64,${base64}`);
+      } catch {
+        // File not found — leave src as-is
+      }
+    }
+  }
+
+  private rewriteImageSources(tokens: MarkdownIt.Token[], documentUri: vscode.Uri, assetBaseUrl: string): void {
     for (const token of tokens) {
       if (token.type === "inline" && token.children) {
         this.rewriteImageSources(token.children, documentUri, assetBaseUrl);
@@ -100,10 +175,6 @@ export class MarkdownRenderer implements vscode.Disposable {
 
       const source = token.attrGet("src");
       if (!source || !this.isRelativeAsset(source)) {
-        if (source && offlineMode && this.isExternalHttpUrl(source)) {
-          token.attrSet("src", this.buildOfflineBlockedImageDataUri());
-          token.attrSet("title", "Blocked in markdownMirror.offlineMode");
-        }
         continue;
       }
 
@@ -140,44 +211,8 @@ export class MarkdownRenderer implements vscode.Disposable {
 
   private applyHtmlMode(html: string): string {
     const mode = vscode.workspace.getConfiguration("markdownMirror").get<string>("htmlMode", "safe");
-    const offlineMode = this.isOfflineModeEnabled();
     if (mode === "trusted") {
-      if (!offlineMode) {
-        return html;
-      }
-
-      return sanitizeHtml(html, {
-        allowedTags: false,
-        allowedAttributes: false,
-        transformTags: {
-          a: (tagName, attribs) => {
-            const output: Record<string, string> = { ...attribs };
-            if (output.href && this.isExternalHttpUrl(output.href)) {
-              delete output.href;
-              output["data-offline-blocked"] = "true";
-              output.title = "Blocked in markdownMirror.offlineMode";
-            }
-
-            return {
-              tagName,
-              attribs: output
-            };
-          },
-          img: (tagName, attribs) => {
-            const output: Record<string, string> = { ...attribs };
-            if (output.src && this.isExternalHttpUrl(output.src)) {
-              output.src = this.buildOfflineBlockedImageDataUri();
-              output["data-offline-blocked"] = "true";
-              output.title = "Blocked in markdownMirror.offlineMode";
-            }
-
-            return {
-              tagName,
-              attribs: output
-            };
-          }
-        }
-      });
+      return html;
     }
 
     return sanitizeHtml(html, {
@@ -205,7 +240,7 @@ export class MarkdownRenderer implements vscode.Disposable {
       ]),
       allowedAttributes: {
         ...sanitizeHtml.defaults.allowedAttributes,
-        "*": ["class", "id", "title", "aria-label", "data-offline-blocked", "data-source-line"],
+        "*": ["class", "id", "title", "aria-label", "data-source-line"],
         a: ["href", "name", "target", "rel"],
         img: ["src", "alt", "title", "width", "height"],
         code: ["class"],
@@ -216,45 +251,13 @@ export class MarkdownRenderer implements vscode.Disposable {
       allowedSchemes: ["http", "https", "mailto", "data"],
       transformTags: {
         a: (tagName, attribs) => {
-          const output: Record<string, string> = { ...attribs, rel: "noopener noreferrer" };
-          if (offlineMode && output.href && this.isExternalHttpUrl(output.href)) {
-            delete output.href;
-            output["data-offline-blocked"] = "true";
-            output.title = "Blocked in markdownMirror.offlineMode";
-          }
-          return {
-            tagName,
-            attribs: output
-          };
-        },
-        img: (tagName, attribs) => {
-          const output: Record<string, string> = { ...attribs };
-          if (offlineMode && output.src && this.isExternalHttpUrl(output.src)) {
-            output.src = this.buildOfflineBlockedImageDataUri();
-            output["data-offline-blocked"] = "true";
-            output.title = "Blocked in markdownMirror.offlineMode";
-          }
-          return {
-            tagName,
-            attribs: output
-          };
+          const output: Record<string, string> = { ...attribs, rel: "noopener noreferrer", target: "_blank" };
+          return { tagName, attribs: output };
         }
       }
     });
   }
 
-  private isOfflineModeEnabled(): boolean {
-    return true;
-  }
-
-  private isExternalHttpUrl(value: string): boolean {
-    return /^(?:https?:)?\/\//i.test(value);
-  }
-
-  private buildOfflineBlockedImageDataUri(): string {
-    const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='700' height='140' viewBox='0 0 700 140'><rect width='700' height='140' fill='#f8fafc' stroke='#cbd5e1'/><text x='20' y='78' fill='#334155' font-family='Segoe UI,Arial,sans-serif' font-size='16'>External image blocked in markdownMirror.offlineMode</text></svg>";
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  }
 
   private renderFrontmatterCard(frontmatterData: Record<string, unknown>): string {
     if (!this.isFrontmatterCardEnabled() || !frontmatterData || Object.keys(frontmatterData).length === 0) {
@@ -291,5 +294,108 @@ export class MarkdownRenderer implements vscode.Disposable {
   private isFrontmatterCardEnabled(): boolean {
     const mode = vscode.workspace.getConfiguration("markdownMirror").get<string>("showFrontmatter", "card");
     return mode !== "none";
+  }
+
+  private normalizeAzureDevOpsMermaidContainers(markdown: string): string {
+    const lines = markdown.split(/\r?\n/);
+    const normalized: string[] = [];
+    let insideMermaidContainer = false;
+
+    for (const line of lines) {
+      if (!insideMermaidContainer && /^\s*:::\s*mermaid\s*$/i.test(line)) {
+        normalized.push("```mermaid");
+        insideMermaidContainer = true;
+        continue;
+      }
+
+      if (insideMermaidContainer && /^\s*:::\s*$/.test(line)) {
+        normalized.push("```");
+        insideMermaidContainer = false;
+        continue;
+      }
+
+      normalized.push(line);
+    }
+
+    if (insideMermaidContainer) {
+      normalized.push("```");
+    }
+
+    return normalized.join("\n");
+  }
+
+  private normalizeWikiLinks(markdown: string): string {
+    return markdown.replace(/\[\[([^\]|#]+)(?:#([^\]|]+))?(?:\|([^\]]+))?\]\]/g, (_full, targetRaw: string, anchorRaw: string, labelRaw: string) => {
+      const target = String(targetRaw || "").trim().replace(/\\/g, "/");
+      if (!target) {
+        return _full;
+      }
+
+      const hrefBase = /\.md$/i.test(target) ? target : `${target}.md`;
+      const anchor = String(anchorRaw || "").trim();
+      const href = anchor ? `${hrefBase}#${this.slugifyHeading(anchor)}` : hrefBase;
+      const label = String(labelRaw || target).trim();
+      return `[${label}](${href})`;
+    });
+  }
+
+  private normalizeCallouts(markdown: string): string {
+    const lines = markdown.split(/\r?\n/);
+    const output: string[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      const start = line.match(/^>\s*\[!(NOTE|TIP|WARNING|IMPORTANT|CAUTION)\]\s*(.*)$/i);
+      if (!start) {
+        output.push(line);
+        i += 1;
+        continue;
+      }
+
+      const kind = start[1].toLowerCase();
+      const title = start[2]?.trim() || start[1];
+      const body: string[] = [];
+      i += 1;
+
+      while (i < lines.length) {
+        const candidate = lines[i];
+        if (!candidate.startsWith(">")) {
+          break;
+        }
+
+        body.push(candidate.replace(/^>\s?/, ""));
+        i += 1;
+      }
+
+      output.push(`<div class=\"mm-callout mm-callout-${kind}\">`);
+      output.push(`<p class=\"mm-callout-title\">${this.md.utils.escapeHtml(title)}</p>`);
+      output.push(body.join("\n"));
+      output.push("</div>");
+    }
+
+    return output.join("\n");
+  }
+
+  private slugifyHeading(value: string): string {
+    const normalized = value
+      .normalize("NFKD")
+      .toLowerCase()
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-");
+
+    return normalized || "section";
+  }
+
+  private getHeadingSlugMap(env: unknown): Map<string, number> {
+    const candidate = env as { headingSlugCounts?: Map<string, number> };
+    if (!candidate.headingSlugCounts) {
+      candidate.headingSlugCounts = new Map<string, number>();
+    }
+
+    return candidate.headingSlugCounts;
   }
 }

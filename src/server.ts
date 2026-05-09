@@ -50,10 +50,21 @@ export class MirrorServer implements vscode.Disposable {
 
     await this.assertWebRootIsValid();
 
-    this.httpServer = await new Promise<http.Server>((resolve, reject) => {
-      const server = this.app.listen(0, this.host, () => resolve(server));
-      server.on("error", reject);
-    });
+    const configuredPort = vscode.workspace.getConfiguration("markdownMirror").get<number>("port", 0);
+    const port = configuredPort > 0 ? configuredPort : 0;
+
+    try {
+      this.httpServer = await new Promise<http.Server>((resolve, reject) => {
+        const server = this.app.listen(port, this.host, () => resolve(server));
+        server.on("error", reject);
+      });
+    } catch (error: unknown) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "EADDRINUSE") {
+        throw new Error(`Port ${port} is already in use. Change markdownMirror.port in settings or set to 0 for auto-assign.`);
+      }
+      throw error;
+    }
 
     const address = this.httpServer.address();
     if (!address || typeof address === "string") {
@@ -80,17 +91,19 @@ export class MirrorServer implements vscode.Disposable {
       return;
     }
 
-    await new Promise<void>((resolve, reject) => {
-      this.httpServer?.close((error?: Error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
-
+    const server = this.httpServer;
     this.httpServer = undefined;
+
+    // Force-close all open connections to prevent hang
+    if (typeof (server as any).closeAllConnections === "function") {
+      (server as any).closeAllConnections();
+    }
+
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve());
+      // Safety timeout — don't hang forever
+      setTimeout(resolve, 3000);
+    });
   }
 
   public dispose(): void {
@@ -101,13 +114,14 @@ export class MirrorServer implements vscode.Disposable {
     this.app.use(express.json({ limit: "200kb" }));
 
     this.app.use((req, res, next) => {
-      const remoteAddress = req.socket.remoteAddress ?? "";
-      if (!this.isLoopbackClient(remoteAddress)) {
-        res.status(403).json({ error: "Forbidden. Localhost clients only." });
-        return;
-      }
-      next();
-    });
+        const remoteAddress = req.socket.remoteAddress ?? "";
+        if (!this.isLoopbackClient(remoteAddress)) {
+          res.status(403).json({ error: "Forbidden. Localhost clients only." });
+          return;
+        }
+        res.setHeader("Access-Control-Allow-Origin", `http://${this.host}:${this.getPortSafe()}`);
+        next();
+      });
 
     this.app.use(express.static(this.webRootPath, { index: "index.html" }));
 
@@ -131,7 +145,6 @@ export class MirrorServer implements vscode.Disposable {
       const mermaidTheme = this.normalizeMermaidTheme(rawMermaidTheme);
       const enableMath = config.get<boolean>("enableMath", false);
       const customCssPath = (config.get<string>("customCssPath", "") || "").trim();
-      const offlineMode = true;
       const defaultCompareMode = config.get<boolean>("defaultCompareMode", true);
       const defaultTocVisible = config.get<boolean>("defaultTocVisible", true);
       const defaultThemeRaw = (config.get<string>("defaultTheme", "light") || "light").toLowerCase();
@@ -146,12 +159,13 @@ export class MirrorServer implements vscode.Disposable {
       const enableToc = config.get<boolean>("enableToc", true);
       const enableThemeToggle = config.get<boolean>("enableThemeToggle", true);
       const enableWidthToggle = config.get<boolean>("enableWidthToggle", true);
+      const startExplorerCollapsed = config.get<boolean>("startExplorerCollapsed", false);
+      const defaultFilePath = (config.get<string>("defaultFilePath", "") || "").trim();
 
       res.json({
         enableMath,
         mermaidTheme,
         customCssPath,
-        offlineMode,
         defaultCompareMode,
         defaultTocVisible,
         defaultTheme,
@@ -163,7 +177,9 @@ export class MirrorServer implements vscode.Disposable {
         enableCompare,
         enableToc,
         enableThemeToggle,
-        enableWidthToggle
+        enableWidthToggle,
+        startExplorerCollapsed,
+        defaultFilePath
       });
     });
 
@@ -332,11 +348,23 @@ export class MirrorServer implements vscode.Disposable {
         const bytes = await vscode.workspace.fs.readFile(documentUri);
         const markdown = new TextDecoder("utf-8").decode(bytes);
         const baseUrl = `http://${this.host}:${this.getPort()}`;
-        const html = this.renderer.render({
-          markdown,
-          documentUri,
-          assetBaseUrl: baseUrl
-        });
+        const embedImages = req.query.native === "true";
+
+        let html: string;
+        if (embedImages) {
+          html = await this.renderer.renderWithEmbeddedImages({
+            markdown,
+            documentUri,
+            assetBaseUrl: baseUrl,
+            embedImages: true
+          });
+        } else {
+          html = this.renderer.render({
+            markdown,
+            documentUri,
+            assetBaseUrl: baseUrl
+          });
+        }
 
         res.json({
           uri: documentUri.toString(),
@@ -351,6 +379,7 @@ export class MirrorServer implements vscode.Disposable {
 
   private async buildWorkspaceTree(): Promise<WorkspaceTreeNode[]> {
     const folders = vscode.workspace.workspaceFolders ?? [];
+    const excludePatterns = this.getExcludePatterns();
     const rootCandidates = (
       await Promise.all(folders.map(async (folder) => {
         const folderRootPathSettings = this.getRootPathSettings(folder);
@@ -362,7 +391,7 @@ export class MirrorServer implements vscode.Disposable {
       rootCandidates
         .filter((candidate): candidate is { folderName: string; rootUri: vscode.Uri; relativeBase: string } => !!candidate)
         .map(async (candidate) => {
-          const children = await this.readDirectory(candidate.rootUri, candidate.relativeBase);
+          const children = await this.readDirectory(candidate.rootUri, candidate.relativeBase, excludePatterns);
           return {
             name: candidate.folderName,
             kind: "folder" as const,
@@ -375,7 +404,7 @@ export class MirrorServer implements vscode.Disposable {
     return roots.filter((root) => (root.children?.length ?? 0) > 0);
   }
 
-  private async readDirectory(directoryUri: vscode.Uri, relativeBase: string): Promise<WorkspaceTreeNode[]> {
+  private async readDirectory(directoryUri: vscode.Uri, relativeBase: string, excludePatterns: string[]): Promise<WorkspaceTreeNode[]> {
     const entries = await vscode.workspace.fs.readDirectory(directoryUri);
     const sorted = [...entries].sort((a, b) => a[0].localeCompare(b[0]));
     const nodes: WorkspaceTreeNode[] = [];
@@ -385,11 +414,16 @@ export class MirrorServer implements vscode.Disposable {
         continue;
       }
 
-      const childUri = vscode.Uri.joinPath(directoryUri, name);
       const childRelativePath = relativeBase ? `${relativeBase}/${name}` : name;
 
+      if (this.isExcluded(childRelativePath, excludePatterns)) {
+        continue;
+      }
+
+      const childUri = vscode.Uri.joinPath(directoryUri, name);
+
       if (kind === vscode.FileType.Directory) {
-        const children = await this.readDirectory(childUri, childRelativePath);
+        const children = await this.readDirectory(childUri, childRelativePath, excludePatterns);
         if (children.length === 0) {
           continue;
         }
@@ -537,6 +571,50 @@ export class MirrorServer implements vscode.Disposable {
     return !relative.startsWith("..") && !path.isAbsolute(relative);
   }
 
+  private getExcludePatterns(): string[] {
+    const config = vscode.workspace.getConfiguration("markdownMirror");
+    const raw = config.get<string[]>("excludePaths", []);
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+
+    return raw
+      .filter((v): v is string => typeof v === "string")
+      .map((v) => v.trim().replace(/\\/g, "/"))
+      .filter((v) => v.length > 0);
+  }
+
+  private isExcluded(relativePath: string, patterns: string[]): boolean {
+    if (patterns.length === 0) {
+      return false;
+    }
+
+    const normalized = relativePath.replace(/\\/g, "/").toLowerCase();
+    for (const pattern of patterns) {
+      const lowerPattern = pattern.toLowerCase();
+
+      // Exact match
+      if (normalized === lowerPattern || normalized.startsWith(lowerPattern + "/")) {
+        return true;
+      }
+
+      // Glob: **/name matches any path ending with /name or equal to name
+      if (lowerPattern.startsWith("**/")) {
+        const suffix = lowerPattern.slice(3);
+        if (normalized === suffix || normalized.endsWith("/" + suffix)) {
+          return true;
+        }
+
+        const parts = normalized.split("/");
+        if (parts.some((part) => part === suffix)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   private getPort(): number {
     const address = this.httpServer?.address();
     if (!address || typeof address === "string") {
@@ -544,6 +622,14 @@ export class MirrorServer implements vscode.Disposable {
     }
 
     return address.port;
+  }
+
+  private getPortSafe(): number {
+    try {
+      return this.getPort();
+    } catch {
+      return 0;
+    }
   }
 
   private isLoopbackClient(remoteAddress: string): boolean {

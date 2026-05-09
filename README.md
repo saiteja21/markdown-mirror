@@ -45,14 +45,16 @@ It scans markdown files, serves a mirrored structure, and updates the browser pr
 - Auto-starts on markdown workspaces (configurable)
 - WebSocket hot updates (no full-page refresh flicker)
 - Relative image path support through local asset mapping
-- Mermaid diagram rendering for fenced `mermaid` code blocks
+- Mermaid diagram rendering for fenced `mermaid` code blocks and Azure DevOps `:::mermaid` containers
 - Download Mermaid diagrams as PNG from browser
+- Native preview shell with quick actions, runtime status chips, compact mode, and keyboard shortcuts
 - Syntax highlighting with `markdown-it` + `highlight.js`
 - Localhost-only server guard (`127.0.0.1`)
 
 ## Commands
 
 - `Markdown Mirror: Start`
+- `Markdown Mirror: Open Native`
 - `Markdown Mirror: Stop`
 
 ## Use In VS Code
@@ -85,12 +87,12 @@ It scans markdown files, serves a mirrored structure, and updates the browser pr
 		</tr>
 		<tr>
 			<td>5</td>
-			<td>Browser should open automatically based on your settings.</td>
+			<td>Preview opens in VS Code and/or browser based on your host mode settings.</td>
 		</tr>
 	</tbody>
 </table>
 
-If browser does not open, copy the URL from the notification and open it manually.
+If browser mode is enabled and browser does not open, copy the URL from the notification and open it manually.
 
 ### Close Mirror
 
@@ -110,6 +112,10 @@ This stops the local server for the current VS Code session.
 3. Configure:
 	- `markdownMirror.autoStart`
 	- `markdownMirror.autoOpenMode`
+	- `markdownMirror.hostMode`
+	- `markdownMirror.nativeFollowVsCodeTheme`
+	- `markdownMirror.nativeLockThemeToggle`
+	- `markdownMirror.nativeUiProfile`
 	- `markdownMirror.rootPath`
 	- `markdownMirror.enableMath`
 	- `markdownMirror.mermaidTheme`
@@ -128,7 +134,8 @@ Example (default behavior):
 ```json
 {
 	"markdownMirror.autoStart": true,
-	"markdownMirror.autoOpenMode": "always"
+	"markdownMirror.autoOpenMode": "always",
+	"markdownMirror.hostMode": "vscode"
 }
 ```
 
@@ -169,6 +176,19 @@ Path format rules:
 	- `always`: open browser on every auto-start.
 	- `firstRun` (default): open browser only on first auto-start for this machine/profile.
 	- `never`: do not auto-open browser on auto-start.
+- `markdownMirror.hostMode`
+	- `vscode` (default): host preview in a native VS Code panel.
+	- `browser`: host preview in an external browser.
+	- `both`: host preview in both VS Code panel and external browser.
+- `markdownMirror.nativeFollowVsCodeTheme`
+	- `true` (default): native preview follows active VS Code light/dark theme.
+	- `false`: native preview can use its own saved light/dark preference.
+- `markdownMirror.nativeLockThemeToggle`
+	- `true` (default): lock in-preview theme toggle while following VS Code theme.
+	- `false`: allow in-preview theme toggling even when VS Code theme sync is enabled.
+- `markdownMirror.nativeUiProfile`
+	- `focused` (default): native-first streamlined layout with reduced clutter.
+	- `classic`: keeps the full browser-style in-app layout inside native host.
 - `markdownMirror.enableMermaid`
 	- `true` (default): render Mermaid diagrams from markdown code fences.
 - `markdownMirror.htmlMode`
@@ -225,7 +245,7 @@ Path format rules:
 - `markdownMirror.enableWidthToggle`
 	- `true` (default): show Reading/Full width toggle.
 
-Manual command start always opens the browser.
+Manual command start follows `markdownMirror.hostMode`.
 
 ## Security
 
@@ -236,6 +256,10 @@ Manual command start always opens the browser.
 ## Licensing And Third-Party Compliance
 
 Markdown Mirror follows a local-first policy for implementation, but uses third-party libraries where they are the most practical and secure choice.
+
+Product features, command names, and UX labels are intentionally original to Markdown Mirror.
+The extension does not copy source code from other markdown tools or extensions.
+Compatibility behaviors (for example wiki links and callout blocks) are implemented independently using public markdown syntax patterns.
 
 - Third-party notices and attributions: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - Release-time legal checklist: see [docs/release-legal-checklist.md](docs/release-legal-checklist.md).
@@ -250,7 +274,7 @@ Release policy:
 
 1. Install the extension from the VS Code Marketplace.
 2. Open a workspace that contains `.md` files.
-3. Extension auto-starts (if enabled) and opens your browser based on `autoOpenMode`.
+3. Extension auto-starts (if enabled) and opens native preview/browser based on `hostMode` and `autoOpenMode`.
 4. Click any markdown file in the left explorer.
 5. Edit markdown in VS Code and see live updates in browser.
 6. Use topbar controls for Compare, TOC, Slides, Export HTML, theme, and Reading Width.
@@ -274,7 +298,7 @@ Release policy:
 	- If needed, run `Markdown Mirror: Stop` and then `Markdown Mirror: Start`.
 - Mermaid not rendering:
 	- Confirm `markdownMirror.enableMermaid` is enabled.
-	- Ensure fenced block language is exactly `mermaid`.
-- Browser page looks stale:
-	- Refresh the browser tab once.
+	- Use either fenced syntax with language `mermaid` or Azure DevOps-style `:::mermaid` container syntax.
+- Browser or native preview looks stale:
+	- Run `Developer: Reload Window` once.
 	- Verify VS Code has write access to the workspace files.

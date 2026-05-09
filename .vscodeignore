@@ -8,3 +8,8 @@ node_modules/**
 tsconfig.json
 docs/maintainers/**
 !CHANGELOG.md
+local-test-files/**
+gen-ext.js
+patch.js
+patch-*.js
+template.txt

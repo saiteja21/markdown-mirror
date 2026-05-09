@@ -10,6 +10,9 @@
 </head>
 <body>
   <div id="app-shell" class="app-shell">
+    <!-- Reading progress bar -->
+    <div id="reading-progress" class="reading-progress" aria-hidden="true"></div>
+
     <aside id="left-panel" class="sidebar panel-region" aria-label="File explorer panel">
       <div class="sidebar-header">
         <div class="sidebar-header-row">
@@ -72,15 +75,24 @@
           <span class="breadcrumb-text">Select a file to preview</span>
         </div>
         <div class="topbar-actions">
-          <button id="print-toggle" class="topbar-btn" type="button" aria-pressed="false">Print / PDF</button>
-          <button id="export-html-toggle" class="topbar-btn" type="button" aria-pressed="false">Export HTML</button>
-          <button id="export-word-toggle" class="topbar-btn" type="button" aria-pressed="false">Export Word</button>
-          <button id="slides-toggle" class="topbar-btn" type="button" aria-pressed="false">Slides</button>
-          <button id="compare-toggle" class="topbar-btn" type="button" aria-pressed="false">Compare</button>
+          <button id="cmd-palette-toggle" class="topbar-btn topbar-btn-search" type="button" title="Command palette (Ctrl+K)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Search
+          </button>
           <button id="toc-toggle" class="topbar-btn" type="button" aria-pressed="false">TOC</button>
+          <button id="compare-toggle" class="topbar-btn" type="button" aria-pressed="false">Split View</button>
           <button id="theme-toggle" class="topbar-btn" type="button" aria-pressed="false">Dark</button>
           <button id="width-toggle" class="topbar-btn" type="button" aria-pressed="false">Reading Width</button>
-          <button id="shortcuts-toggle" class="topbar-btn" type="button" aria-pressed="false" title="Keyboard shortcuts">?</button>
+          <div class="topbar-overflow">
+            <button id="topbar-more" class="topbar-btn" type="button" title="More actions">⋯</button>
+            <div id="topbar-overflow-menu" class="topbar-overflow-menu" hidden>
+              <button id="print-toggle" class="topbar-overflow-item" type="button">Print / PDF</button>
+              <button id="export-html-toggle" class="topbar-overflow-item" type="button">Export HTML</button>
+              <button id="export-word-toggle" class="topbar-overflow-item" type="button">Export Word</button>
+              <button id="slides-toggle" class="topbar-overflow-item" type="button">Slides</button>
+              <button id="shortcuts-toggle" class="topbar-overflow-item" type="button">Keyboard Shortcuts</button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -163,6 +175,7 @@
         <p class="word-export-hint">Choose one or more markdown files. The exported .doc opens in Microsoft Word.</p>
 
         <div class="word-export-controls">
+          <input type="text" id="word-export-search" class="word-export-search" placeholder="Search files..." autocomplete="off" />
           <button id="word-export-select-current" class="topbar-btn" type="button">Current</button>
           <button id="word-export-select-tabs" class="topbar-btn" type="button">Open Tabs</button>
           <button id="word-export-select-all" class="topbar-btn" type="button">All</button>
@@ -177,10 +190,17 @@
         </footer>
       </div>
     </div>
+    <!-- Command Palette -->
+    <div id="cmd-palette" class="cmd-palette" role="dialog" aria-modal="true" aria-label="Command palette" hidden>
+      <div class="cmd-palette-card">
+        <input type="text" id="cmd-palette-input" class="cmd-palette-input" placeholder="Search files, headings, or type &gt; for actions..." autocomplete="off" />
+        <div id="cmd-palette-results" class="cmd-palette-results"></div>
+      </div>
+    </div>
   </div>
   <script defer src="/vendor/katex/katex.min.js"></script>
   <script defer src="/vendor/katex/contrib/auto-render.min.js"></script>
-  <script src="/vendor/mermaid/mermaid.min.js"></script>
+  <script defer src="/vendor/mermaid/mermaid.min.js"></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

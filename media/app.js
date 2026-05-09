@@ -16,8 +16,7 @@ const state = {
     enableMath: false,
     mermaidTheme: "default",
     customCssPath: "",
-    offlineMode: true,
-    defaultCompareMode: true,
+    defaultCompareMode: false,
     defaultTocVisible: true,
     defaultTheme: "light",
     defaultWidthMode: "full",
@@ -73,6 +72,19 @@ const state = {
   sync: {
     suppressEditorSyncUntil: 0
   },
+  nativeHost: {
+    enabled: false,
+    themeSync: false,
+    forcedTheme: null,
+    lockThemeToggle: false,
+    uiProfile: "classic",
+    targetUri: null
+  },
+  launchOptions: {
+    forceCompare: false,
+    openSlides: false,
+    targetUri: null
+  },
   perf: {
     bootStartedAt: performance.now()
   }
@@ -103,6 +115,8 @@ const constants = {
   defaultRightWidth: 300,
   narrowBreakpoint: 1024
 };
+
+applyNativeHostOptions();
 
 const appShellEl = document.getElementById("app-shell");
 const leftPanelEl = document.getElementById("left-panel");
@@ -188,7 +202,6 @@ async function loadRuntimeSettings() {
     state.runtimeSettings.enableMath = Boolean(payload && payload.enableMath);
     state.runtimeSettings.mermaidTheme = normalizeMermaidTheme(payload && payload.mermaidTheme);
     state.runtimeSettings.customCssPath = payload && typeof payload.customCssPath === "string" ? payload.customCssPath : "";
-    state.runtimeSettings.offlineMode = true;
     state.runtimeSettings.defaultCompareMode = !(payload && payload.defaultCompareMode === false);
     state.runtimeSettings.defaultTocVisible = !(payload && payload.defaultTocVisible === false);
     state.runtimeSettings.defaultTheme = payload && payload.defaultTheme === "dark" ? constants.themeDark : constants.themeLight;
@@ -203,6 +216,8 @@ async function loadRuntimeSettings() {
     state.runtimeSettings.enableToc = !(payload && payload.enableToc === false);
     state.runtimeSettings.enableThemeToggle = !(payload && payload.enableThemeToggle === false);
     state.runtimeSettings.enableWidthToggle = !(payload && payload.enableWidthToggle === false);
+    state.runtimeSettings.startExplorerCollapsed = Boolean(payload && payload.startExplorerCollapsed);
+    state.runtimeSettings.defaultFilePath = payload && typeof payload.defaultFilePath === "string" ? payload.defaultFilePath : "";
   } catch (_) {
     // Keep defaults when settings API is unavailable.
   }
@@ -222,6 +237,7 @@ async function bootstrap() {
   loadPinnedUris();
   loadFavoritesPrefs();
   loadPanelPrefs();
+  applyNativeUxProfile();
   setupPanelManager();
 
   setupPaneActivation();
@@ -231,10 +247,8 @@ async function bootstrap() {
   setupPrintToggle();
   setupExportHtml();
   setupWordExport();
-  setupSlidesMode();
   setupBackToTop();
   setupLightbox();
-  setupScrollSync();
   setupKeyboardShortcuts();
   setupWidthModeToggle();
   setupThemeToggle();
@@ -242,8 +256,15 @@ async function bootstrap() {
   setupTocToggle();
 
   await loadTree();
+  applyLaunchOptionsAfterTreeLoad();
   applyCustomCss();
   connectSocket();
+
+  // Defer non-critical setup
+  requestAnimationFrame(function () {
+    setupSlidesMode();
+    setupScrollSync();
+  });
 
   requestAnimationFrame(function () {
     var elapsed = Math.round(performance.now() - state.perf.bootStartedAt);
@@ -303,6 +324,34 @@ function applyRuntimeFeatureToggles() {
   if (!state.runtimeSettings.enableToc) {
     state.panelPrefs.rightCollapsed = true;
   }
+
+  // Start with explorer collapsed if configured
+  if (state.runtimeSettings.startExplorerCollapsed) {
+    state.panelPrefs.leftCollapsed = true;
+  }
+}
+
+function isNativeFocusedProfile() {
+  return state.nativeHost.enabled && state.nativeHost.uiProfile === "focused";
+}
+
+function applyNativeUxProfile() {
+  if (!state.nativeHost.enabled) {
+    return;
+  }
+
+  document.body.classList.add("native-host");
+  document.body.classList.add("native-ui-" + state.nativeHost.uiProfile);
+
+  if (!isNativeFocusedProfile()) {
+    return;
+  }
+
+  // Native focused mode: default to a clean single-pane reading/editing experience.
+  state.panelPrefs.leftCollapsed = true;
+  state.panelPrefs.rightCollapsed = true;
+  state.runtimeSettings.defaultCompareMode = false;
+  state.runtimeSettings.defaultTocVisible = false;
 }
 
 function loadPinnedUris() {
@@ -643,6 +692,14 @@ function setupWordExport() {
 
   wordExportModalEl.dataset.boundWordExport = "true";
 
+  // Search input for filtering files
+  var wordExportSearchEl = document.getElementById("word-export-search");
+  if (wordExportSearchEl) {
+    wordExportSearchEl.addEventListener("input", function () {
+      renderWordExportList();
+    });
+  }
+
   exportWordToggleEl.addEventListener("click", function () {
     if (!state.runtimeSettings.enableWordExport) {
       return;
@@ -766,29 +823,107 @@ function renderWordExportList() {
     return;
   }
 
-  for (var i = 0; i < docs.length; i++) {
-    var doc = docs[i];
-    var label = document.createElement("label");
-    label.className = "word-export-item";
-
-    var checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.value = doc.uri;
-    checkbox.checked = state.wordExport.selectedUris.has(doc.uri);
-    checkbox.addEventListener("change", createWordDocSelectionHandler(doc.uri, checkbox));
-
-    var text = document.createElement("span");
-    text.className = "word-export-path";
-    text.textContent = doc.relativePath || extractFileName(doc.uri);
-
-    label.appendChild(checkbox);
-    label.appendChild(text);
-    wordExportListEl.appendChild(label);
+  // Filter by search
+  var searchEl = document.getElementById("word-export-search");
+  var query = (searchEl ? searchEl.value : "").toLowerCase().trim();
+  var filtered = docs;
+  if (query) {
+    filtered = docs.filter(function (doc) {
+      return (doc.relativePath || "").toLowerCase().indexOf(query) >= 0;
+    });
   }
+
+  // === Selected Files Section (always at top) ===
+  var selectedDocs = filtered.filter(function (d) { return state.wordExport.selectedUris.has(d.uri); });
+  if (selectedDocs.length > 0) {
+    var selectedHeader = document.createElement("div");
+    selectedHeader.className = "word-export-section-header";
+    selectedHeader.innerHTML = '<span class="word-export-section-icon">✓</span> Selected Files (' + selectedDocs.length + ')';
+    wordExportListEl.appendChild(selectedHeader);
+
+    for (var s = 0; s < selectedDocs.length; s++) {
+      wordExportListEl.appendChild(createWordExportItem(selectedDocs[s], true));
+    }
+  }
+
+  // === All Files by Folder (collapsible) ===
+  var folderMap = new Map();
+  for (var i = 0; i < filtered.length; i++) {
+    var doc = filtered[i];
+    var parts = (doc.relativePath || "").replace(/\\/g, "/").split("/");
+    var fileName = parts.pop() || doc.relativePath;
+    var folder = parts.length > 0 ? parts.join("/") : "(root)";
+    if (!folderMap.has(folder)) {
+      folderMap.set(folder, []);
+    }
+    folderMap.get(folder).push({ doc: doc, fileName: fileName });
+  }
+
+  var allFoldersHeader = document.createElement("div");
+  allFoldersHeader.className = "word-export-section-header";
+  allFoldersHeader.innerHTML = '<span class="word-export-section-icon">📁</span> All Files';
+  wordExportListEl.appendChild(allFoldersHeader);
+
+  folderMap.forEach(function (files, folder) {
+    var folderWrapper = document.createElement("div");
+    folderWrapper.className = "word-export-folder-group";
+
+    var folderHeader = document.createElement("button");
+    folderHeader.type = "button";
+    folderHeader.className = "word-export-folder";
+    var hasSelected = files.some(function (f) { return state.wordExport.selectedUris.has(f.doc.uri); });
+    folderHeader.innerHTML = '<span class="word-export-folder-arrow">▶</span> ' +
+      escapeHtml(folder) +
+      ' <span class="word-export-folder-count">(' + files.length + ')</span>' +
+      (hasSelected ? ' <span class="word-export-folder-selected">●</span>' : '');
+
+    var folderContent = document.createElement("div");
+    folderContent.className = "word-export-folder-content";
+    folderContent.hidden = true;
+
+    folderHeader.addEventListener("click", (function (content, header) {
+      return function () {
+        var collapsed = !content.hidden;
+        content.hidden = collapsed;
+        var arrow = header.querySelector(".word-export-folder-arrow");
+        if (arrow) arrow.textContent = collapsed ? "▶" : "▼";
+      };
+    })(folderContent, folderHeader));
+
+    for (var j = 0; j < files.length; j++) {
+      folderContent.appendChild(createWordExportItem(files[j].doc, false, files[j].fileName));
+    }
+
+    folderWrapper.appendChild(folderHeader);
+    folderWrapper.appendChild(folderContent);
+    wordExportListEl.appendChild(folderWrapper);
+  });
 
   if (wordExportConfirmEl) {
     wordExportConfirmEl.disabled = state.wordExport.selectedUris.size === 0;
   }
+}
+
+function createWordExportItem(doc, showFullPath, displayName) {
+  var label = document.createElement("label");
+  label.className = "word-export-item";
+  if (state.wordExport.selectedUris.has(doc.uri)) {
+    label.classList.add("is-selected");
+  }
+
+  var checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.value = doc.uri;
+  checkbox.checked = state.wordExport.selectedUris.has(doc.uri);
+  checkbox.addEventListener("change", createWordDocSelectionHandler(doc.uri, checkbox));
+
+  var text = document.createElement("span");
+  text.className = "word-export-path";
+  text.textContent = showFullPath ? (doc.relativePath || extractFileName(doc.uri)) : (displayName || extractFileName(doc.uri));
+
+  label.appendChild(checkbox);
+  label.appendChild(text);
+  return label;
 }
 
 function createWordDocSelectionHandler(uri, checkbox) {
@@ -806,6 +941,9 @@ function createWordDocSelectionHandler(uri, checkbox) {
     if (wordExportConfirmEl) {
       wordExportConfirmEl.disabled = state.wordExport.selectedUris.size === 0;
     }
+
+    // Re-render to update selected section at top
+    renderWordExportList();
   };
 }
 
@@ -897,6 +1035,8 @@ function setupBackToTop() {
   paneContentElements.secondary.addEventListener("scroll", handleActivePaneScrollUi);
   paneContentElements.primary.addEventListener("click", createPaneReadHandler("primary"));
   paneContentElements.secondary.addEventListener("click", createPaneReadHandler("secondary"));
+  paneContentElements.primary.addEventListener("click", createContentLinkHandler("primary"));
+  paneContentElements.secondary.addEventListener("click", createContentLinkHandler("secondary"));
 }
 
 function handleActivePaneScrollUi(event) {
@@ -922,6 +1062,95 @@ function createPaneReadHandler(pane) {
   return function () {
     clearRecentEditHighlightForPane(pane);
   };
+}
+
+function createContentLinkHandler(pane) {
+  return function (event) {
+    var anchor = event.target.closest("a[href]");
+    if (!anchor) {
+      return;
+    }
+
+    var href = anchor.getAttribute("href") || "";
+    if (!href) {
+      return;
+    }
+
+    // External links: open in new tab
+    if (/^https?:\/\//i.test(href)) {
+      event.preventDefault();
+      window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    // Mailto: do nothing special
+    if (/^mailto:/i.test(href)) {
+      return;
+    }
+
+    // In-page anchor
+    if (href.startsWith("#")) {
+      event.preventDefault();
+      var anchorId = href.slice(1);
+      var target = paneContentElements[pane].querySelector("#" + CSS.escape(anchorId));
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+      return;
+    }
+
+    // Internal relative .md link - resolve and open
+    event.preventDefault();
+    var currentPath = state.selectedPathByPane[pane];
+    if (!currentPath) {
+      return;
+    }
+
+    var hashPart = "";
+    var hrefPath = href;
+    var hashIndex = href.indexOf("#");
+    if (hashIndex >= 0) {
+      hrefPath = href.slice(0, hashIndex);
+      hashPart = href.slice(hashIndex);
+    }
+
+    var resolvedRelative = normalizeRelativeDocPath(currentPath, hrefPath);
+    var matchedNode = findTreeNodeByRelativePath(resolvedRelative);
+    if (matchedNode && matchedNode.uri) {
+      void openDocument(matchedNode.uri, matchedNode.relativePath, pane);
+    } else {
+      // Try with .md extension appended
+      var withExt = resolvedRelative.toLowerCase().endsWith(".md") ? resolvedRelative : resolvedRelative + ".md";
+      matchedNode = findTreeNodeByRelativePath(withExt);
+      if (matchedNode && matchedNode.uri) {
+        void openDocument(matchedNode.uri, matchedNode.relativePath, pane);
+      }
+    }
+  };
+}
+
+function findTreeNodeByRelativePath(targetPath) {
+  var normalized = (targetPath || "").replace(/\\/g, "/").toLowerCase();
+  return findNodeInTree(state.treeRoots, normalized);
+}
+
+function findNodeInTree(nodes, targetNormalized) {
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i];
+    if (node.kind === "file") {
+      var nodePath = (node.relativePath || "").replace(/\\/g, "/").toLowerCase();
+      if (nodePath === targetNormalized) {
+        return node;
+      }
+    }
+    if (node.children) {
+      var found = findNodeInTree(node.children, targetNormalized);
+      if (found) {
+        return found;
+      }
+    }
+  }
+  return null;
 }
 
 function clearRecentEditHighlightForPane(pane) {
@@ -961,6 +1190,17 @@ function setupLightbox() {
         setLightboxOpen(false);
       }
     });
+
+    // Zoom controls via scroll wheel
+    lightboxEl.addEventListener("wheel", function (event) {
+      if (lightboxEl.hidden || !lightboxImageEl) return;
+      event.preventDefault();
+      var current = parseFloat(lightboxImageEl.dataset.zoom || "1");
+      var delta = event.deltaY < 0 ? 0.2 : -0.2;
+      var next = Math.max(0.3, Math.min(5, current + delta));
+      lightboxImageEl.dataset.zoom = String(next);
+      lightboxImageEl.style.transform = "scale(" + next + ")";
+    }, { passive: false });
   }
 }
 
@@ -972,9 +1212,12 @@ function setLightboxOpen(open, src) {
   lightboxEl.hidden = !open;
   if (open && src) {
     lightboxImageEl.src = src;
+    lightboxImageEl.style.transform = "scale(1)";
+    lightboxImageEl.dataset.zoom = "1";
   }
   if (!open) {
     lightboxImageEl.removeAttribute("src");
+    lightboxImageEl.style.transform = "";
   }
 }
 
@@ -1318,8 +1561,14 @@ function applyWidthMode(mode) {
 }
 
 function setupThemeToggle() {
-  var initialTheme = readStorage(storageKeys.themeMode, state.runtimeSettings.defaultTheme || constants.themeLight);
-  applyTheme(state.runtimeSettings.enableThemeToggle && initialTheme === constants.themeDark ? constants.themeDark : constants.themeLight);
+  var forcedTheme = state.nativeHost.themeSync ? state.nativeHost.forcedTheme : null;
+  var initialTheme = forcedTheme || readStorage(storageKeys.themeMode, state.runtimeSettings.defaultTheme || constants.themeLight);
+  applyTheme(initialTheme === constants.themeDark ? constants.themeDark : constants.themeLight, {
+    persist: !forcedTheme
+  });
+
+  var canToggleTheme = state.runtimeSettings.enableThemeToggle && !state.nativeHost.lockThemeToggle;
+  applyThemeToggleAvailability(canToggleTheme);
 
   if (!themeToggleEl || themeToggleEl.dataset.boundThemeToggle === "true") {
     return;
@@ -1327,7 +1576,7 @@ function setupThemeToggle() {
 
   themeToggleEl.dataset.boundThemeToggle = "true";
   themeToggleEl.addEventListener("click", function () {
-    if (!state.runtimeSettings.enableThemeToggle) {
+    if (!state.runtimeSettings.enableThemeToggle || state.nativeHost.lockThemeToggle) {
       return;
     }
     var isDark = document.body.classList.contains("theme-dark");
@@ -1335,7 +1584,8 @@ function setupThemeToggle() {
   });
 }
 
-function applyTheme(theme) {
+function applyTheme(theme, options) {
+  var persist = !(options && options.persist === false);
   var isDark = theme === constants.themeDark;
   document.body.classList.toggle("theme-dark", isDark);
   themeToggleEl.classList.toggle("is-active", isDark);
@@ -1344,13 +1594,40 @@ function applyTheme(theme) {
 
   if (window.mermaid) {
     window.__markdownMirrorMermaidInitialized = false;
+    // Re-render Mermaid diagrams with updated theme
+    requestAnimationFrame(function() {
+      var pane = state.compareMode ? state.activePane : "primary";
+      var contentEl = paneContentElements[pane];
+      if (contentEl) {
+        void renderMermaidDiagrams(contentEl);
+      }
+    });
   }
 
-  writeStorage(storageKeys.themeMode, isDark ? constants.themeDark : constants.themeLight);
+  if (persist) {
+    writeStorage(storageKeys.themeMode, isDark ? constants.themeDark : constants.themeLight);
+  }
+}
+
+function applyThemeToggleAvailability(enabled) {
+  if (!themeToggleEl) {
+    return;
+  }
+
+  themeToggleEl.disabled = !enabled;
+  if (!enabled && state.nativeHost.lockThemeToggle) {
+    themeToggleEl.title = "Following VS Code theme";
+  } else {
+    themeToggleEl.title = "Toggle light/dark theme";
+  }
 }
 
 function setupCompareToggle() {
-  var initialCompare = readStorage(storageKeys.compareMode, state.runtimeSettings.defaultCompareMode ? "true" : "false") === "true";
+  var initialCompare = state.launchOptions.forceCompare
+    ? true
+    : isNativeFocusedProfile()
+      ? false
+      : readStorage(storageKeys.compareMode, state.runtimeSettings.defaultCompareMode ? "true" : "false") === "true";
   applyCompareMode(state.runtimeSettings.enableCompare ? initialCompare : false);
 
   if (!compareToggleEl || compareToggleEl.dataset.boundCompareToggle === "true") {
@@ -1374,7 +1651,7 @@ function applyCompareMode(enabled) {
   state.compareMode = enabled;
   document.body.classList.toggle("compare-mode", enabled);
   compareToggleEl.classList.toggle("is-active", enabled);
-  compareToggleEl.textContent = enabled ? "Single" : "Compare";
+  compareToggleEl.textContent = enabled ? "Single View" : "Split View";
   compareToggleEl.setAttribute("aria-pressed", String(enabled));
 
   if (!enabled) {
@@ -1431,9 +1708,17 @@ async function loadTree() {
   console.info("[Markdown Mirror] tree loaded in " + String(Math.round(performance.now() - startedAt)) + "ms");
 
   if (!state.selectedUriByPane.primary) {
-    var first = findFirstFile(state.treeRoots);
-    if (first && first.uri) {
-      await openDocument(first.uri, first.relativePath, "primary");
+    var initialNode = null;
+    if (state.nativeHost.targetUri) {
+      initialNode = findFileByUri(state.treeRoots, state.nativeHost.targetUri);
+    }
+
+    if (!initialNode) {
+      initialNode = findFirstFile(state.treeRoots);
+    }
+
+    if (initialNode && initialNode.uri) {
+      await openDocument(initialNode.uri, initialNode.relativePath, "primary");
       if (state.compareMode) {
         paneContentElements.secondary.innerHTML = '<p class="placeholder-note">Select another file to compare side by side.</p>';
       }
@@ -1957,17 +2242,73 @@ function renderTabs() {
 
   for (var i = 0; i < sorted.length; i++) {
     var tab = sorted[i];
+    var tabEl = document.createElement("div");
+    tabEl.className = "doc-tab";
+
     var button = document.createElement("button");
     button.type = "button";
-    button.className = "doc-tab";
+    button.className = "doc-tab-open";
     if (tab.uri === activeUri) {
-      button.classList.add("is-active");
+      tabEl.classList.add("is-active");
     }
     button.textContent = extractFileName(tab.relativePath || "Untitled");
     button.title = tab.relativePath || tab.uri;
     button.addEventListener("click", createTabOpenHandler(tab.uri, tab.relativePath));
-    tabsBarEl.appendChild(button);
+
+    var closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "doc-tab-close";
+    closeButton.textContent = "×";
+    closeButton.title = "Close";
+    closeButton.setAttribute("aria-label", "Close " + (tab.relativePath || extractFileName(tab.uri) || "tab"));
+    closeButton.addEventListener("click", createTabCloseHandler(tab.uri));
+
+    tabEl.appendChild(button);
+    tabEl.appendChild(closeButton);
+    tabsBarEl.appendChild(tabEl);
   }
+}
+
+function createTabCloseHandler(uri) {
+  return function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    var pane = state.compareMode ? state.activePane : "primary";
+    var activeUri = state.selectedUriByPane[pane] || state.selectedUriByPane.primary;
+    var wasActive = activeUri === uri;
+
+    removeTab(uri);
+
+    if (!wasActive) {
+      renderTabs();
+      return;
+    }
+
+    if (state.openTabs.length === 0) {
+      state.selectedUriByPane[pane] = null;
+      state.selectedPathByPane[pane] = null;
+      paneContentElements[pane].innerHTML = '<p class="placeholder-note">Select a markdown file from the explorer.</p>';
+      refreshSelection();
+      updateBreadcrumb();
+      updateDocumentStats();
+      rebuildTocForActivePane();
+      renderTabs();
+      return;
+    }
+
+    var fallback = state.openTabs
+      .slice()
+      .sort(function (a, b) {
+        return b.lastOpenedAt - a.lastOpenedAt;
+      })[0];
+
+    if (fallback) {
+      void openDocument(fallback.uri, fallback.relativePath, pane);
+    } else {
+      renderTabs();
+    }
+  };
 }
 
 function createTabOpenHandler(uri, relativePath) {
@@ -2060,12 +2401,15 @@ function createTocJumpHandler(contentEl, headingId) {
   };
 }
 
+var wsReconnectDelay = 1000;
+
 function connectSocket() {
   var protocol = location.protocol === "https:" ? "wss" : "ws";
   var socket = new WebSocket(protocol + "://" + location.host + "/ws");
   var treeRefreshTimer = null;
 
   socket.addEventListener("open", function () {
+    wsReconnectDelay = 1000; // Reset backoff on successful connect
     statusEl.classList.add("online");
     statusEl.querySelector(".status-text").textContent = "Connected";
   });
@@ -2073,7 +2417,8 @@ function connectSocket() {
   socket.addEventListener("close", function () {
     statusEl.classList.remove("online");
     statusEl.querySelector(".status-text").textContent = "Disconnected";
-    setTimeout(connectSocket, 1000);
+    setTimeout(connectSocket, wsReconnectDelay);
+    wsReconnectDelay = Math.min(wsReconnectDelay * 1.5, 30000); // Exponential backoff, max 30s
   });
 
   socket.addEventListener("message", function (event) {
@@ -2341,7 +2686,16 @@ function renderMathExpressions(container) {
 }
 
 async function renderMermaidDiagrams(container) {
-  if (!window.mermaid || !container) {
+  if (!container) {
+    return;
+  }
+
+  var diagrams = container.querySelectorAll(".mermaid");
+  if (diagrams.length === 0) {
+    return;
+  }
+
+  if (!window.mermaid) {
     return;
   }
 
@@ -2479,8 +2833,10 @@ function scrollTargetIntoPane(contentEl, target, smooth) {
   var targetTop = target.getBoundingClientRect().top;
   var contentTop = contentEl.getBoundingClientRect().top;
   var nextTop = contentEl.scrollTop + (targetTop - contentTop) - 8;
+  // Clamp to max scrollable position to prevent white space at bottom
+  var maxScroll = contentEl.scrollHeight - contentEl.clientHeight;
   contentEl.scrollTo({
-    top: Math.max(0, nextTop),
+    top: Math.max(0, Math.min(nextTop, maxScroll)),
     behavior: smooth ? "smooth" : "auto"
   });
 }
@@ -2607,19 +2963,20 @@ async function downloadMermaidPng(svgNode, fileName) {
     var width = Math.ceil(rect.width) || parseInt(svgNode.getAttribute("width"), 10) || 800;
     var height = Math.ceil(rect.height) || parseInt(svgNode.getAttribute("height"), 10) || 600;
 
-    clone.setAttribute("width", width);
-    clone.setAttribute("height", height);
+    clone.setAttribute("width", String(width));
+    clone.setAttribute("height", String(height));
+    clone.removeAttribute("style");
     inlineSvgStyles(svgNode, clone);
 
     var svgData = new XMLSerializer().serializeToString(clone);
-    var svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-    var imgUrl = URL.createObjectURL(svgBlob);
+    var svgBase64 = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
 
     var img = new Image();
+    img.crossOrigin = "anonymous";
     await new Promise(function (resolve, reject) {
       img.onload = resolve;
       img.onerror = reject;
-      img.src = imgUrl;
+      img.src = svgBase64;
     });
 
     var scale = 2;
@@ -2636,28 +2993,13 @@ async function downloadMermaidPng(svgNode, fileName) {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(img, 0, 0, width, height);
-    URL.revokeObjectURL(imgUrl);
 
-    canvas.toBlob(function (blob) {
-      if (!blob) {
-        return;
-      }
-
-      var objectUrl = URL.createObjectURL(blob);
-      triggerDownload(objectUrl, fileName);
-      setTimeout(function () {
-        URL.revokeObjectURL(objectUrl);
-      }, 100);
-    }, "image/png");
-  } catch (_) {
-    var serializer = new XMLSerializer();
-    var source = serializer.serializeToString(svgNode);
-    var fallbackBlob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
-    var fallbackUrl = URL.createObjectURL(fallbackBlob);
-    triggerDownload(fallbackUrl, fileName.replace(".png", ".svg"));
-    setTimeout(function () {
-      URL.revokeObjectURL(fallbackUrl);
-    }, 100);
+    var dataUrl = canvas.toDataURL("image/png");
+    triggerDownload(dataUrl, fileName);
+  } catch (err) {
+    console.warn("[Markdown Mirror] PNG conversion failed:", err);
+    // No SVG fallback — show error to user
+    alert("Unable to convert diagram to PNG. Try again or take a screenshot.");
   }
 }
 
@@ -2767,6 +3109,7 @@ function createTaskCheckboxToggleHandler(pane, li, input) {
 }
 
 function attachImageLightboxHandlers(container) {
+  // Images
   var images = container.querySelectorAll("img");
   for (var i = 0; i < images.length; i++) {
     var image = images[i];
@@ -2778,6 +3121,31 @@ function attachImageLightboxHandlers(container) {
     image.style.cursor = "zoom-in";
     image.addEventListener("click", createImageLightboxHandler(image));
   }
+
+  // Mermaid SVGs
+  var mermaidDivs = container.querySelectorAll(".mermaid");
+  for (var m = 0; m < mermaidDivs.length; m++) {
+    var mDiv = mermaidDivs[m];
+    if (mDiv.dataset.boundLightbox) {
+      continue;
+    }
+    mDiv.dataset.boundLightbox = "true";
+    mDiv.style.cursor = "zoom-in";
+    mDiv.addEventListener("click", createMermaidLightboxHandler(mDiv));
+  }
+}
+
+function createMermaidLightboxHandler(mermaidDiv) {
+  return function () {
+    var svg = mermaidDiv.querySelector("svg");
+    if (!svg) return;
+    // Convert to PNG for lightbox
+    svgToPngDataUrl(svg).then(function(pngUrl) {
+      setLightboxOpen(true, pngUrl);
+    }).catch(function() {
+      // If PNG fails, skip lightbox
+    });
+  };
 }
 
 function createImageLightboxHandler(image) {
@@ -2880,13 +3248,19 @@ async function applyCustomCss() {
 
 async function exportActivePaneAsStandaloneHtml() {
   var pane = state.compareMode ? state.activePane : "primary";
-  var contentEl = paneContentElements[pane];
-  if (!contentEl || !state.selectedPathByPane[pane]) {
+  var uri = state.selectedUriByPane[pane];
+  var relativePath = state.selectedPathByPane[pane];
+  if (!uri || !relativePath) {
     return;
   }
 
-  var clone = contentEl.cloneNode(true);
-  await replaceMermaidSvgsWithDataImages(clone);
+  // Fetch full rendered document from server (not just visible viewport)
+  var docResponse = await fetch("/api/document?uri=" + encodeURIComponent(uri));
+  if (!docResponse.ok) {
+    return;
+  }
+  var docPayload = await docResponse.json();
+  var fullHtml = docPayload.html || "";
 
   var cssParts = await Promise.all([
     fetchTextOrEmpty("/app.css"),
@@ -2895,14 +3269,14 @@ async function exportActivePaneAsStandaloneHtml() {
   ]);
 
   var html = "<!doctype html><html><head><meta charset=\"utf-8\"/><title>" +
-    escapeHtml(state.selectedPathByPane[pane]) +
+    escapeHtml(relativePath) +
     "</title><style>" + cssParts.join("\n") + "</style></head><body><main class=\"document-content\">" +
-    clone.innerHTML +
+    fullHtml +
     "</main></body></html>";
 
   var blob = new Blob([html], { type: "text/html;charset=utf-8" });
   var url = URL.createObjectURL(blob);
-  triggerDownload(url, extractFileName(state.selectedPathByPane[pane]).replace(/\.md$/i, "") + ".html");
+  triggerDownload(url, extractFileName(relativePath).replace(/\.md$/i, "") + ".html");
   setTimeout(function () {
     URL.revokeObjectURL(url);
   }, 200);
@@ -3012,6 +3386,7 @@ async function loadDocumentForWordExport(uri, fileIndex) {
     var container = document.createElement("div");
     container.innerHTML = payload.html || "";
     cleanupExportNode(container);
+    await replaceMermaidSvgsWithDataImages(container);
     await inlineImageSourcesAsData(container);
 
     return {
@@ -3077,10 +3452,6 @@ async function inlineImageSourcesAsData(root) {
 
     try {
       var absoluteSrc = new URL(src, window.location.origin).toString();
-      var absoluteHost = new URL(absoluteSrc).origin;
-      if (state.runtimeSettings.offlineMode && absoluteHost !== window.location.origin) {
-        continue;
-      }
 
       var response = await fetch(absoluteSrc);
       if (!response.ok) {
@@ -3131,13 +3502,63 @@ async function replaceMermaidSvgsWithDataImages(root) {
   var svgs = root.querySelectorAll(".mermaid svg");
   for (var i = 0; i < svgs.length; i++) {
     var svg = svgs[i];
-    var text = new XMLSerializer().serializeToString(svg);
-    var dataUri = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(text);
-    var img = document.createElement("img");
-    img.src = dataUri;
-    img.alt = "Mermaid diagram";
-    svg.parentNode.replaceWith(img);
+    try {
+      // Convert SVG to PNG via canvas for Word compatibility
+      var pngDataUrl = await svgToPngDataUrl(svg);
+      var img = document.createElement("img");
+      img.src = pngDataUrl;
+      img.alt = "Mermaid diagram";
+      img.style.maxWidth = "100%";
+      svg.parentNode.replaceWith(img);
+    } catch (_) {
+      // Fallback: try again with a simpler approach
+      try {
+        var pngRetry = await svgToPngDataUrl(svg);
+        var retryImg = document.createElement("img");
+        retryImg.src = pngRetry;
+        retryImg.alt = "Mermaid diagram";
+        retryImg.style.maxWidth = "100%";
+        svg.parentNode.replaceWith(retryImg);
+      } catch (_2) {
+        // Remove the SVG entirely if conversion fails
+        svg.parentNode.innerHTML = '<p style="color:#94a3b8;font-style:italic">[Diagram could not be exported]</p>';
+      }
+    }
   }
+}
+
+async function svgToPngDataUrl(svgElement) {
+  var clone = svgElement.cloneNode(true);
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  var rect = svgElement.getBoundingClientRect();
+  var width = Math.ceil(rect.width) || parseInt(svgElement.getAttribute("width"), 10) || 800;
+  var height = Math.ceil(rect.height) || parseInt(svgElement.getAttribute("height"), 10) || 600;
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  clone.removeAttribute("style");
+  inlineSvgStyles(svgElement, clone);
+
+  var svgData = new XMLSerializer().serializeToString(clone);
+  var svgBase64 = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+
+  var img = new Image();
+  img.crossOrigin = "anonymous";
+  await new Promise(function (resolve, reject) {
+    img.onload = resolve;
+    img.onerror = reject;
+    img.src = svgBase64;
+  });
+
+  var scale = 2;
+  var canvas = document.createElement("canvas");
+  canvas.width = width * scale;
+  canvas.height = height * scale;
+  var ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, 0, 0, width, height);
+  return canvas.toDataURL("image/png");
 }
 
 function toggleSlidesMode() {
@@ -3307,10 +3728,107 @@ function findFirstInNodes(nodes) {
   return null;
 }
 
+function findFileByUri(roots, targetUri) {
+  if (!targetUri) {
+    return null;
+  }
+
+  for (var i = 0; i < roots.length; i++) {
+    var found = findByUriInNodes(roots[i].children || [], targetUri);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function findByUriInNodes(nodes, targetUri) {
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i];
+    if (node.kind === "file" && node.uri === targetUri) {
+      return node;
+    }
+
+    if (node.kind === "folder") {
+      var found = findByUriInNodes(node.children || [], targetUri);
+      if (found) {
+        return found;
+      }
+    }
+  }
+
+  return null;
+}
+
 function escapeHtml(text) {
   var div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function applyNativeHostOptions() {
+  var params;
+  try {
+    params = new URLSearchParams(window.location.search);
+  } catch (_) {
+    return;
+  }
+
+  state.launchOptions.forceCompare = params.get("mm_compare") === "1";
+  state.launchOptions.openSlides = params.get("mm_slides") === "1";
+  var launchTargetUri = params.get("mm_open_uri");
+  state.launchOptions.targetUri = typeof launchTargetUri === "string" && launchTargetUri.length > 0 ? launchTargetUri : null;
+
+  // Read theme from URL for both browser and native modes
+  var rawTheme = String(params.get("mm_theme") || "").toLowerCase();
+  if (rawTheme === constants.themeDark || rawTheme === constants.themeLight) {
+    state.runtimeSettings.defaultTheme = rawTheme;
+  }
+
+  if (params.get("mm_native") !== "1") {
+    return;
+  }
+
+  state.nativeHost.enabled = true;
+  state.nativeHost.uiProfile = String(params.get("mm_native_ui") || "focused").toLowerCase() === "classic"
+    ? "classic"
+    : "focused";
+
+  var targetUri = params.get("mm_open_uri");
+  state.nativeHost.targetUri = typeof targetUri === "string" && targetUri.length > 0 ? targetUri : null;
+
+  var forcedTheme = rawTheme === constants.themeDark || rawTheme === constants.themeLight ? rawTheme : null;
+  state.nativeHost.themeSync = Boolean(forcedTheme);
+  state.nativeHost.forcedTheme = forcedTheme;
+  state.nativeHost.lockThemeToggle = state.nativeHost.themeSync && params.get("mm_lockTheme") !== "0";
+}
+
+function applyLaunchOptionsAfterTreeLoad() {
+  if (state.launchOptions.targetUri && state.selectedUriByPane.primary !== state.launchOptions.targetUri) {
+    var byTarget = findFileByUri(state.treeRoots, state.launchOptions.targetUri);
+    if (byTarget && byTarget.uri) {
+      void openDocument(byTarget.uri, byTarget.relativePath, "primary");
+    }
+  }
+
+  // Default file on launch: open configured file if no explicit target was set
+  if (!state.launchOptions.targetUri && state.runtimeSettings.defaultFilePath && !state.selectedUriByPane.primary) {
+    var defaultNode = findTreeNodeByRelativePath(state.runtimeSettings.defaultFilePath);
+    if (defaultNode && defaultNode.uri) {
+      void openDocument(defaultNode.uri, defaultNode.relativePath, "primary");
+    }
+  }
+
+  if (state.launchOptions.forceCompare && state.runtimeSettings.enableCompare) {
+    applyCompareMode(true);
+  }
+
+  if (state.launchOptions.openSlides && state.runtimeSettings.enableSlides) {
+    window.requestAnimationFrame(function () {
+      setSlidesMode(true);
+    });
+  }
 }
 
 function readStorage(key, fallback) {
@@ -3359,3 +3877,239 @@ function clamp(value, min, max) {
 }
 
 window.__markdownMirrorMermaidInitialized = false;
+
+// ===== READING PROGRESS BAR =====
+(function setupReadingProgress() {
+  var progressEl = document.getElementById("reading-progress");
+  if (!progressEl) return;
+
+  function updateProgress() {
+    var pane = state.compareMode ? state.activePane : "primary";
+    var contentEl = paneContentElements[pane];
+    if (!contentEl) return;
+    var scrollTop = contentEl.scrollTop;
+    var scrollHeight = contentEl.scrollHeight - contentEl.clientHeight;
+    var pct = scrollHeight > 0 ? Math.min(100, (scrollTop / scrollHeight) * 100) : 0;
+    progressEl.style.width = pct + "%";
+  }
+
+  if (paneContentElements.primary) paneContentElements.primary.addEventListener("scroll", updateProgress);
+  if (paneContentElements.secondary) paneContentElements.secondary.addEventListener("scroll", updateProgress);
+})();
+
+// ===== SCROLL-SPY FOR TOC =====
+(function setupScrollSpy() {
+  var lastActive = null;
+
+  function runScrollSpy() {
+    var pane = state.compareMode ? state.activePane : "primary";
+    var contentEl = paneContentElements[pane];
+    if (!contentEl || !tocListEl) return;
+
+    var headings = contentEl.querySelectorAll("h1[id], h2[id], h3[id], h4[id], h5[id], h6[id]");
+    if (headings.length === 0) return;
+
+    var containerTop = contentEl.getBoundingClientRect().top;
+    var activeId = null;
+
+    for (var i = headings.length - 1; i >= 0; i--) {
+      var rect = headings[i].getBoundingClientRect();
+      if (rect.top - containerTop <= 60) {
+        activeId = headings[i].id;
+        break;
+      }
+    }
+
+    if (activeId === lastActive) return;
+    lastActive = activeId;
+
+    var tocItems = tocListEl.querySelectorAll(".toc-item");
+    for (var j = 0; j < tocItems.length; j++) {
+      var item = tocItems[j];
+      var href = (item.getAttribute("data-heading-id") || item.getAttribute("href") || "").replace("#", "");
+      item.classList.toggle("is-active-spy", href === activeId);
+    }
+  }
+
+  if (paneContentElements.primary) paneContentElements.primary.addEventListener("scroll", runScrollSpy);
+  if (paneContentElements.secondary) paneContentElements.secondary.addEventListener("scroll", runScrollSpy);
+})();
+
+// ===== COMMAND PALETTE =====
+(function setupCommandPalette() {
+  var paletteEl = document.getElementById("cmd-palette");
+  var inputEl = document.getElementById("cmd-palette-input");
+  var resultsEl = document.getElementById("cmd-palette-results");
+  var toggleBtn = document.getElementById("cmd-palette-toggle");
+  if (!paletteEl || !inputEl || !resultsEl) return;
+
+  var focusIndex = -1;
+  var currentResults = [];
+
+  function openPalette() {
+    paletteEl.hidden = false;
+    inputEl.value = "";
+    inputEl.focus();
+    focusIndex = -1;
+    renderResults("");
+  }
+
+  function closePalette() {
+    paletteEl.hidden = true;
+    inputEl.blur();
+  }
+
+  function getActions() {
+    return [
+      { type: "action", label: "Toggle Dark/Light Theme", action: function() { if (themeToggleEl) themeToggleEl.click(); } },
+      { type: "action", label: "Toggle TOC Panel", action: function() { if (tocToggleEl) tocToggleEl.click(); } },
+      { type: "action", label: "Toggle Split View", action: function() { if (compareToggleEl) compareToggleEl.click(); } },
+      { type: "action", label: "Toggle Reading Width", action: function() { if (widthToggleEl) widthToggleEl.click(); } },
+      { type: "action", label: "Print / Export PDF", action: function() { if (printToggleEl) printToggleEl.click(); } },
+      { type: "action", label: "Export HTML", action: function() { if (exportHtmlToggleEl) exportHtmlToggleEl.click(); } },
+      { type: "action", label: "Export Word", action: function() { if (exportWordToggleEl) exportWordToggleEl.click(); } },
+      { type: "action", label: "Slides Mode", action: function() { if (slidesToggleEl) slidesToggleEl.click(); } },
+      { type: "action", label: "Keyboard Shortcuts", action: function() { if (shortcutsToggleEl) shortcutsToggleEl.click(); } }
+    ];
+  }
+
+  function getFiles() {
+    var docs = getAllMarkdownDocs();
+    return docs.map(function(doc) {
+      return { type: "file", label: doc.relativePath, uri: doc.uri, relativePath: doc.relativePath };
+    });
+  }
+
+  function getHeadings() {
+    var pane = state.compareMode ? state.activePane : "primary";
+    var contentEl = paneContentElements[pane];
+    if (!contentEl) return [];
+    var heads = contentEl.querySelectorAll("h1, h2, h3, h4, h5, h6");
+    var result = [];
+    for (var i = 0; i < heads.length; i++) {
+      var text = (heads[i].textContent || "").trim();
+      var id = heads[i].id || "";
+      if (text) result.push({ type: "heading", label: text, id: id, element: heads[i] });
+    }
+    return result;
+  }
+
+  function renderResults(query) {
+    resultsEl.innerHTML = "";
+    currentResults = [];
+    var q = query.toLowerCase().trim();
+    var isActionMode = q.startsWith(">");
+
+    if (isActionMode) {
+      var aq = q.slice(1).trim();
+      var actions = getActions().filter(function(a) { return !aq || a.label.toLowerCase().indexOf(aq) >= 0; });
+      if (actions.length > 0) {
+        addSection("Actions");
+        actions.forEach(function(a) { addResult("\u26A1", a.label, "", a); });
+      }
+    } else {
+      var files = getFiles().filter(function(f) { return !q || f.label.toLowerCase().indexOf(q) >= 0; });
+      if (files.length > 0) {
+        addSection("Files");
+        files.slice(0, 10).forEach(function(f) { addResult("\uD83D\uDCC4", f.label, "", f); });
+      }
+      var headings = getHeadings().filter(function(h) { return !q || h.label.toLowerCase().indexOf(q) >= 0; });
+      if (headings.length > 0) {
+        addSection("Headings");
+        headings.slice(0, 10).forEach(function(h) { addResult("#", h.label, "", h); });
+      }
+      if (!q || q.length < 2) {
+        var acts = getActions().slice(0, 5);
+        if (acts.length > 0) {
+          addSection("Actions (type > for all)");
+          acts.forEach(function(a) { addResult("\u26A1", a.label, "", a); });
+        }
+      }
+    }
+
+    focusIndex = currentResults.length > 0 ? 0 : -1;
+    updateFocus();
+  }
+
+  function addSection(title) {
+    var div = document.createElement("div");
+    div.className = "cmd-result-section";
+    div.textContent = title;
+    resultsEl.appendChild(div);
+  }
+
+  function addResult(icon, label, hint, data) {
+    var idx = currentResults.length;
+    var div = document.createElement("div");
+    div.className = "cmd-result";
+    div.dataset.index = String(idx);
+    div.innerHTML = '<span class="cmd-result-icon">' + escapeHtml(icon) + '</span>' +
+      '<span class="cmd-result-label">' + escapeHtml(label) + '</span>' +
+      (hint ? '<span class="cmd-result-hint">' + escapeHtml(hint) + '</span>' : '');
+    div.addEventListener("click", function() { executeResult(data); });
+    resultsEl.appendChild(div);
+    currentResults.push({ element: div, data: data });
+  }
+
+  function executeResult(data) {
+    closePalette();
+    if (data.type === "action" && typeof data.action === "function") {
+      data.action();
+    } else if (data.type === "file" && data.uri) {
+      void openDocument(data.uri, data.relativePath, "primary");
+    } else if (data.type === "heading" && data.element) {
+      data.element.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
+  function updateFocus() {
+    for (var i = 0; i < currentResults.length; i++) {
+      currentResults[i].element.classList.toggle("is-focused", i === focusIndex);
+    }
+    if (focusIndex >= 0 && currentResults[focusIndex]) {
+      currentResults[focusIndex].element.scrollIntoView({ block: "nearest" });
+    }
+  }
+
+  inputEl.addEventListener("input", function() { renderResults(inputEl.value); });
+  inputEl.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") { closePalette(); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); focusIndex = Math.min(focusIndex + 1, currentResults.length - 1); updateFocus(); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); focusIndex = Math.max(focusIndex - 1, 0); updateFocus(); return; }
+    if (e.key === "Enter" && focusIndex >= 0 && currentResults[focusIndex]) { executeResult(currentResults[focusIndex].data); return; }
+  });
+
+  paletteEl.addEventListener("click", function(e) { if (e.target === paletteEl) closePalette(); });
+  if (toggleBtn) toggleBtn.addEventListener("click", openPalette);
+
+  document.addEventListener("keydown", function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+      e.preventDefault();
+      if (paletteEl.hidden) openPalette(); else closePalette();
+    }
+  });
+})();
+
+// ===== TOPBAR OVERFLOW MENU =====
+(function setupOverflowMenu() {
+  var moreBtn = document.getElementById("topbar-more");
+  var menu = document.getElementById("topbar-overflow-menu");
+  if (!moreBtn || !menu) return;
+
+  moreBtn.addEventListener("click", function(e) {
+    e.stopPropagation();
+    if (menu.hasAttribute("hidden")) {
+      menu.removeAttribute("hidden");
+    } else {
+      menu.setAttribute("hidden", "");
+    }
+  });
+
+  document.addEventListener("click", function() {
+    menu.setAttribute("hidden", "");
+  });
+
+  menu.addEventListener("click", function() {
+    menu.setAttribute("hidden", "");
+  });
+})();
