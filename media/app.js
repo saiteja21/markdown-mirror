@@ -1593,15 +1593,8 @@ function applyTheme(theme, options) {
   themeToggleEl.setAttribute("aria-pressed", String(isDark));
 
   if (window.mermaid) {
+    // Re-render is not needed — diagrams always use light theme in white container
     window.__markdownMirrorMermaidInitialized = false;
-    // Re-render Mermaid diagrams with updated theme
-    requestAnimationFrame(function() {
-      var pane = state.compareMode ? state.activePane : "primary";
-      var contentEl = paneContentElements[pane];
-      if (contentEl) {
-        void renderMermaidDiagrams(contentEl);
-      }
-    });
   }
 
   if (persist) {
@@ -2699,14 +2692,13 @@ async function renderMermaidDiagrams(container) {
     return;
   }
 
-  if (!window.__markdownMirrorMermaidInitialized) {
-    window.mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: resolveMermaidTheme()
-    });
-    window.__markdownMirrorMermaidInitialized = true;
-  }
+  // Always use 'default' (light) theme — diagrams render in a white container
+  window.mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "default"
+  });
+  window.__markdownMirrorMermaidInitialized = true;
 
   try {
     await window.mermaid.run({ querySelector: "#" + container.id + " .mermaid" });

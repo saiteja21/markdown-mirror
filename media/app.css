@@ -542,7 +542,7 @@ body.left-panel-collapsed .tabs-bar {
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: 500;
+  z-index: 9000;
   padding: 4px 0;
   display: none;
 }
@@ -809,7 +809,7 @@ body.compare-mode .breadcrumb-current {
   align-items: center;
   gap: 8px;
   flex-wrap: nowrap;
-  overflow-x: auto;
+  overflow: visible;
   max-width: 100%;
 }
 
@@ -1665,9 +1665,10 @@ body.right-panel-collapsed #right-resizer {
   justify-content: center;
   margin: 1.5em 0 0.5em;
   padding: 20px;
-  background: #fafbfc;
+  background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
+  transition: box-shadow var(--transition-normal);
 }
 
 .mermaid svg { max-width: 100%; height: auto; }
@@ -1948,8 +1949,20 @@ body.theme-dark .mm-callout {
 /* Mermaid dark mode visibility */
 body.theme-dark .mermaid {
   background: #ffffff;
-  border-radius: var(--radius-md);
-  padding: 12px;
+  border-color: #334155;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  color: #1e293b;
+}
+
+body.theme-dark .mermaid text,
+body.theme-dark .mermaid .nodeLabel,
+body.theme-dark .mermaid .edgeLabel,
+body.theme-dark .mermaid .label,
+body.theme-dark .mermaid span,
+body.theme-dark .mermaid p,
+body.theme-dark .mermaid tspan {
+  color: #1e293b !important;
+  fill: #1e293b !important;
 }
 
 body.theme-dark .mm-callout-title {

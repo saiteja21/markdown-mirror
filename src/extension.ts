@@ -200,15 +200,10 @@ class NativePreviewManager {
     }
 
     if (NativePreviewManager.currentPanel) {
-      // If server restarted on a different port, refresh the webview HTML
-      if (this.lastBaseUrl !== baseUrl) {
-        this.lastBaseUrl = baseUrl;
-        NativePreviewManager.currentPanel.webview.html = this.getHtmlForWebview(baseUrl, targetUri || this.currentTargetUri || "");
-      }
+      // Always refresh HTML to ensure correct server URL
+      NativePreviewManager.currentPanel.webview.html = this.getHtmlForWebview(baseUrl, targetUri || this.currentTargetUri || "");
+      this.lastBaseUrl = baseUrl;
       NativePreviewManager.currentPanel.reveal(vscode.ViewColumn.Beside, true);
-      if (targetUri) {
-        NativePreviewManager.currentPanel.webview.postMessage({ type: "force-update-target", uri: targetUri });
-      }
       return;
     }
 
@@ -473,13 +468,22 @@ class NativePreviewManager {
 
       let socket;
       let reconnectTimer;
+      let reconnectDelay = 1000;
+      let reconnectAttempts = 0;
 
       function connect() {
-        socket = new WebSocket(wsUrl);
+        try {
+          socket = new WebSocket(wsUrl);
+        } catch {
+          scheduleReconnect();
+          return;
+        }
 
         document.body.classList.toggle('mm-focus-mode', focusModeEnabled);
 
         socket.addEventListener('open', () => {
+          reconnectDelay = 1000;
+          reconnectAttempts = 0;
           loaderEl.style.display = 'none';
           if (targetUri) {
             fetchDocument();
@@ -501,11 +505,25 @@ class NativePreviewManager {
         });
 
         socket.addEventListener('close', () => {
-          loaderEl.style.display = 'block';
-          loaderEl.innerHTML = 'Server disconnected. Reconnecting...<br><small style="color:var(--vscode-descriptionForeground)">If this persists, run <code>Markdown Mirror: Start</code> from the Command Palette.</small>';
-          clearTimeout(reconnectTimer);
-          reconnectTimer = setTimeout(connect, 2000);
+          scheduleReconnect();
         });
+
+        socket.addEventListener('error', () => {
+          // Will trigger close event
+        });
+      }
+
+      function scheduleReconnect() {
+        reconnectAttempts++;
+        loaderEl.style.display = 'block';
+        if (reconnectAttempts <= 3) {
+          loaderEl.textContent = 'Connecting to Markdown Mirror server...';
+        } else {
+          loaderEl.innerHTML = 'Server disconnected. Reconnecting...<br><small style="color:var(--vscode-descriptionForeground)">If this persists, run <code>Markdown Mirror: Start</code> from the Command Palette.</small>';
+        }
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
       }
 
       function fetchDocument() {
