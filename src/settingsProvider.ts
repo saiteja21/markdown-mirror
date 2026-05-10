@@ -4,16 +4,29 @@ interface SettingSpec {
   key: string;
   label: string;
   description: string;
-  type: "boolean" | "enum";
+  type: "boolean" | "enum" | "multiSelect";
   enumValues?: string[];
+  options?: string[];
 }
 
 const SETTINGS: SettingSpec[] = [
+  {
+    key: "dataFileExtensions",
+    label: "File Extensions",
+    description: "Which file types to load in the explorer",
+    type: "multiSelect",
+    options: [".md", ".yaml", ".yml", ".json", ".txt", ".csv", ".tsv", ".xml", ".toml", ".ini", ".cfg", ".log", ".env", ".html", ".htm", ".css", ".js", ".ts", ".py", ".sh", ".bat", ".ps1"]
+  },
   { key: "autoStart", label: "Auto Start", description: "Start when workspace opens", type: "boolean" },
   { key: "hostMode", label: "Host Mode", description: "Where preview opens", type: "enum", enumValues: ["vscode", "browser", "both"] },
   { key: "nativeUiProfile", label: "UI Profile", description: "VS Code panel layout style", type: "enum", enumValues: ["focused", "classic"] },
   { key: "enableMath", label: "Math (KaTeX)", description: "Render math expressions", type: "boolean" },
   { key: "enableMermaid", label: "Mermaid Diagrams", description: "Render diagram code blocks", type: "boolean" },
+  { key: "enablePlantUml", label: "PlantUML Diagrams", description: "Render PlantUML via external server", type: "boolean" },
+  { key: "enableDataFiles", label: "Data File Preview", description: "Show YAML/JSON files with rich preview", type: "boolean" },
+  { key: "enableSearch", label: "Workspace Search", description: "Full-text search in browser", type: "boolean" },
+  { key: "enableTransclusion", label: "Content Transclusion", description: "Enable include directives", type: "boolean" },
+  { key: "autoFixLinksOnRename", label: "Auto-Fix Links", description: "Update links when files are renamed", type: "boolean" },
   { key: "enableQualityDiagnostics", label: "Quality Diagnostics", description: "Show quality checks in Problems panel", type: "boolean" },
   { key: "enablePrint", label: "Print Action", description: "Show Print / PDF button", type: "boolean" },
   { key: "enableHtmlExport", label: "HTML Export", description: "Show Export HTML action", type: "boolean" },
@@ -39,7 +52,9 @@ export class SettingsTreeItem extends vscode.TreeItem {
 
     const icon = spec.type === "boolean"
       ? (currentValue === "true" ? "check" : "circle-slash")
-      : "gear";
+      : spec.type === "multiSelect"
+        ? "list-filter"
+        : "gear";
 
     this.iconPath = new vscode.ThemeIcon(icon);
     this.description = `${currentValue}`;
@@ -70,7 +85,12 @@ export class SettingsTreeProvider implements vscode.TreeDataProvider<SettingsTre
     const config = vscode.workspace.getConfiguration("markdownMirror");
     return SETTINGS.map((spec) => {
       const raw = config.get(spec.key);
-      const value = raw === undefined ? "" : String(raw);
+      let value: string;
+      if (spec.type === "multiSelect" && Array.isArray(raw)) {
+        value = raw.length === 0 ? "(none)" : raw.join(", ");
+      } else {
+        value = raw === undefined ? "" : String(raw);
+      }
       return new SettingsTreeItem(spec, value);
     });
   }
@@ -94,6 +114,24 @@ export async function toggleSetting(spec: SettingSpec): Promise<void> {
 
     if (picked) {
       await config.update(spec.key, picked.label, vscode.ConfigurationTarget.Workspace);
+    }
+  }
+
+  if (spec.type === "multiSelect" && spec.options && spec.options.length > 0) {
+    const currentArr = Array.isArray(current) ? current as string[] : [];
+    const items = spec.options.map((opt) => ({
+      label: opt,
+      picked: currentArr.includes(opt)
+    }));
+
+    const picked = await vscode.window.showQuickPick(items, {
+      title: `Select ${spec.label}`,
+      placeHolder: `Choose which extensions to include`,
+      canPickMany: true
+    });
+
+    if (picked) {
+      await config.update(spec.key, picked.map((p) => p.label), vscode.ConfigurationTarget.Workspace);
     }
   }
 }
