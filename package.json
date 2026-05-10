@@ -187,6 +187,56 @@
         "command": "markdownMirror.compareWithGit",
         "title": "Markdown Mirror: Compare with Git (Rendered Diff)",
         "icon": "$(git-compare)"
+      },
+      {
+        "command": "markdownMirror.formatBold",
+        "title": "Markdown Mirror: Bold",
+        "icon": "$(bold)"
+      },
+      {
+        "command": "markdownMirror.formatItalic",
+        "title": "Markdown Mirror: Italic",
+        "icon": "$(italic)"
+      },
+      {
+        "command": "markdownMirror.formatHeading",
+        "title": "Markdown Mirror: Heading",
+        "icon": "$(text-size)"
+      },
+      {
+        "command": "markdownMirror.formatLink",
+        "title": "Markdown Mirror: Insert Link",
+        "icon": "$(link)"
+      },
+      {
+        "command": "markdownMirror.formatCode",
+        "title": "Markdown Mirror: Code",
+        "icon": "$(code)"
+      },
+      {
+        "command": "markdownMirror.formatBulletList",
+        "title": "Markdown Mirror: Bullet List",
+        "icon": "$(list-unordered)"
+      },
+      {
+        "command": "markdownMirror.formatNumberedList",
+        "title": "Markdown Mirror: Numbered List",
+        "icon": "$(list-ordered)"
+      },
+      {
+        "command": "markdownMirror.formatBlockquote",
+        "title": "Markdown Mirror: Blockquote",
+        "icon": "$(quote)"
+      },
+      {
+        "command": "markdownMirror.formatTable",
+        "title": "Markdown Mirror: Insert Table",
+        "icon": "$(symbol-namespace)"
+      },
+      {
+        "command": "markdownMirror.formatHorizontalRule",
+        "title": "Markdown Mirror: Horizontal Rule",
+        "icon": "$(horizontal-rule)"
       }
     ],
     "configuration": {
@@ -512,32 +562,30 @@
         }
       ]
     },
+    "submenus": [
+      {
+        "id": "markdownMirror.formatSubmenu",
+        "label": "Markdown Mirror: Format"
+      }
+    ],
     "menus": {
+      "markdownMirror.formatSubmenu": [
+        { "command": "markdownMirror.formatBold", "group": "1_text@1" },
+        { "command": "markdownMirror.formatItalic", "group": "1_text@2" },
+        { "command": "markdownMirror.formatHeading", "group": "1_text@3" },
+        { "command": "markdownMirror.formatLink", "group": "1_text@4" },
+        { "command": "markdownMirror.formatCode", "group": "1_text@5" },
+        { "command": "markdownMirror.formatBulletList", "group": "2_block@1" },
+        { "command": "markdownMirror.formatNumberedList", "group": "2_block@2" },
+        { "command": "markdownMirror.formatBlockquote", "group": "2_block@3" },
+        { "command": "markdownMirror.formatTable", "group": "2_block@4" },
+        { "command": "markdownMirror.formatHorizontalRule", "group": "2_block@5" }
+      ],
       "editor/title": [
         {
           "command": "markdownMirror.openActiveInPreview",
           "group": "navigation",
-          "when": "resourceExtname == .md"
-        },
-        {
-          "command": "markdownMirror.exportHtml",
-          "group": "1_export",
-          "when": "resourceExtname == .md && config.markdownMirror.enableHtmlExport"
-        },
-        {
-          "command": "markdownMirror.exportToWord",
-          "group": "1_export",
-          "when": "resourceExtname == .md && config.markdownMirror.enableWordExport"
-        },
-        {
-          "command": "markdownMirror.printPreview",
-          "group": "1_export",
-          "when": "resourceExtname == .md && config.markdownMirror.enablePrint"
-        },
-        {
-          "command": "markdownMirror.compareWithGit",
-          "group": "1_export",
-          "when": "resourceExtname == .md"
+          "when": "resourceLangId == markdown"
         }
       ],
       "view/title": [
@@ -613,6 +661,11 @@
       ],
       "editor/context": [
         {
+          "submenu": "markdownMirror.formatSubmenu",
+          "when": "resourceLangId == markdown",
+          "group": "1_modification@0"
+        },
+        {
           "command": "markdownMirror.openActiveInPreview",
           "when": "resourceExtname == .md",
           "group": "navigation@99"
@@ -628,7 +681,34 @@
           "group": "navigation@101"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "markdownMirror.formatBold",
+        "key": "ctrl+b",
+        "when": "resourceLangId == markdown && editorTextFocus"
+      },
+      {
+        "command": "markdownMirror.formatItalic",
+        "key": "ctrl+i",
+        "when": "resourceLangId == markdown && editorTextFocus"
+      },
+      {
+        "command": "markdownMirror.formatHeading",
+        "key": "ctrl+shift+h",
+        "when": "resourceLangId == markdown && editorTextFocus"
+      },
+      {
+        "command": "markdownMirror.formatLink",
+        "key": "ctrl+k",
+        "when": "resourceLangId == markdown && editorTextFocus"
+      },
+      {
+        "command": "markdownMirror.formatCode",
+        "key": "ctrl+shift+`",
+        "when": "resourceLangId == markdown && editorTextFocus"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run build",

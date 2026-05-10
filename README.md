@@ -7,6 +7,11 @@
 </p>
 
 <p align="center">
+<a href="https://github.com/saiteja21"><img src="https://img.shields.io/badge/Author-Sai%20Teja%20Nagamothu-6f42c1?style=for-the-badge&logo=github&logoColor=white" alt="Author" /></a>
+<a href="https://www.linkedin.com/in/saiteja-nagamothu/"><img src="https://img.shields.io/badge/LinkedIn-Connect-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
+</p>
+
+<p align="center">
 <a href="https://marketplace.visualstudio.com/items?itemName=ForkedCode.markdown-mirror"><img src="https://img.shields.io/visual-studio-marketplace/v/ForkedCode.markdown-mirror?label=Marketplace&color=0078d4&logo=visual-studio-code&logoColor=white" alt="VS Code Marketplace" /></a>
 <a href="https://marketplace.visualstudio.com/items?itemName=ForkedCode.markdown-mirror"><img src="https://img.shields.io/visual-studio-marketplace/i/ForkedCode.markdown-mirror?label=Installs&color=28a745" alt="Installs" /></a>
 <img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />

@@ -133,6 +133,7 @@ const widthToggleEl = document.getElementById("width-toggle");
 const compareToggleEl = document.getElementById("compare-toggle");
 const tocToggleEl = document.getElementById("toc-toggle");
 const themeToggleEl = document.getElementById("theme-toggle");
+const refreshBtnEl = document.getElementById("refresh-btn");
 const tocListEl = document.getElementById("toc-list");
 const printToggleEl = document.getElementById("print-toggle");
 const exportHtmlToggleEl = document.getElementById("export-html-toggle");
@@ -256,7 +257,6 @@ async function bootstrap() {
   setupTocToggle();
 
   await loadTree();
-  loadTags();
   applyLaunchOptionsAfterTreeLoad();
   applyCustomCss();
   connectSocket();
@@ -1556,7 +1556,7 @@ function applyWidthMode(mode) {
   var isReading = mode === constants.widthModeReading;
   document.body.classList.toggle("reading-width", isReading);
   widthToggleEl.classList.toggle("is-reading", isReading);
-  widthToggleEl.textContent = isReading ? "Full Width" : "Reading Width";
+  widthToggleEl.title = isReading ? "Switch to Full Width" : "Switch to Reading Width";
   widthToggleEl.setAttribute("aria-pressed", String(isReading));
   writeStorage(storageKeys.widthMode, isReading ? constants.widthModeReading : constants.widthModeFull);
 }
@@ -1585,12 +1585,22 @@ function setupThemeToggle() {
   });
 }
 
+if (refreshBtnEl) {
+  refreshBtnEl.addEventListener("click", function () {
+    var uri = state.selectedUriByPane.primary;
+    var path = state.selectedPathByPane.primary;
+    if (uri) {
+      openDocument(uri, path, "primary");
+    }
+  });
+}
+
 function applyTheme(theme, options) {
   var persist = !(options && options.persist === false);
   var isDark = theme === constants.themeDark;
   document.body.classList.toggle("theme-dark", isDark);
   themeToggleEl.classList.toggle("is-active", isDark);
-  themeToggleEl.textContent = isDark ? "Light" : "Dark";
+  themeToggleEl.title = isDark ? "Switch to Light theme" : "Switch to Dark theme";
   themeToggleEl.setAttribute("aria-pressed", String(isDark));
 
   if (window.mermaid) {
@@ -1645,7 +1655,7 @@ function applyCompareMode(enabled) {
   state.compareMode = enabled;
   document.body.classList.toggle("compare-mode", enabled);
   compareToggleEl.classList.toggle("is-active", enabled);
-  compareToggleEl.textContent = enabled ? "Single View" : "Split View";
+  compareToggleEl.title = enabled ? "Switch to Single View" : "Switch to Split View";
   compareToggleEl.setAttribute("aria-pressed", String(enabled));
 
   if (!enabled) {
@@ -4083,6 +4093,14 @@ window.__markdownMirrorMermaidInitialized = false;
   });
 })();
 
+// Ctrl+R to refresh current file
+document.addEventListener("keydown", function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === "r") {
+    e.preventDefault();
+    if (refreshBtnEl) refreshBtnEl.click();
+  }
+});
+
 // ===== TOPBAR OVERFLOW MENU =====
 (function setupOverflowMenu() {
   var moreBtn = document.getElementById("topbar-more");
@@ -4135,6 +4153,38 @@ window.__markdownMirrorMermaidInitialized = false;
       var activePanel = viewer.querySelector("." + panelClass);
       if (activePanel) { activePanel.classList.add("active"); }
       e.preventDefault();
+      return;
+    }
+
+    // Copy individual value
+    if (target.classList.contains("data-copy-btn")) {
+      var copyValue = target.getAttribute("data-copy-value");
+      if (copyValue !== null) {
+        navigator.clipboard.writeText(copyValue).then(function() {
+          var origText = target.textContent;
+          target.textContent = "✓";
+          setTimeout(function() { target.textContent = origText; }, 1200);
+        });
+      }
+      e.preventDefault();
+      return;
+    }
+
+    // Copy All button
+    if (target.closest(".data-copy-all-btn")) {
+      var btn = target.closest(".data-copy-all-btn");
+      var viewer = btn.closest(".data-file-viewer");
+      if (!viewer) { return; }
+      var rawEl = viewer.querySelector(".data-raw-content");
+      if (rawEl) {
+        navigator.clipboard.writeText(rawEl.value).then(function() {
+          var origText = btn.textContent;
+          btn.textContent = "✓ Copied!";
+          setTimeout(function() { btn.textContent = origText; }, 1200);
+        });
+      }
+      e.preventDefault();
+      return;
     }
   });
 })();
@@ -4287,101 +4337,3 @@ window.__markdownMirrorMermaidInitialized = false;
   });
 })();
 
-// Tag Navigation
-var currentTagFilter = null;
-
-function escapeHtmlTag(text) {
-  var div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function loadTags() {
-  fetch("/api/tags")
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      renderTagCloud(data.tags || []);
-    })
-    .catch(function() {
-      // Silently fail if tags can't be loaded
-    });
-}
-
-function renderTagCloud(tags) {
-  var container = document.getElementById("tag-cloud");
-  if (!container) return;
-
-  if (tags.length === 0) {
-    container.style.display = "none";
-    return;
-  }
-
-  container.style.display = "block";
-  var html = '<div class="mm-tags-header"><span class="mm-tags-title">Tags</span>';
-  if (currentTagFilter) {
-    html += '<button class="mm-tags-clear" title="Clear filter">✕</button>';
-  }
-  html += '</div><div class="mm-tags-list">';
-
-  tags.forEach(function(t) {
-    var activeClass = currentTagFilter === t.tag ? " mm-tag-active" : "";
-    html += '<button class="mm-tag-chip' + activeClass + '" data-tag="' + escapeHtmlTag(t.tag) + '">' +
-            escapeHtmlTag(t.tag) + ' <span class="mm-tag-count">' + t.count + '</span></button>';
-  });
-
-  html += '</div>';
-  container.innerHTML = html;
-}
-
-document.addEventListener("click", function(e) {
-  var chip = e.target.closest(".mm-tag-chip");
-  if (chip) {
-    var tag = chip.dataset.tag;
-    if (currentTagFilter === tag) {
-      currentTagFilter = null;
-    } else {
-      currentTagFilter = tag;
-    }
-    filterTreeByTag();
-    loadTags();
-    return;
-  }
-
-  var clearBtn = e.target.closest(".mm-tags-clear");
-  if (clearBtn) {
-    currentTagFilter = null;
-    filterTreeByTag();
-    loadTags();
-    return;
-  }
-});
-
-function filterTreeByTag() {
-  if (!currentTagFilter) {
-    document.querySelectorAll(".tree-file, .tree-folder").forEach(function(el) {
-      el.style.display = "";
-    });
-    return;
-  }
-
-  fetch("/api/tags")
-    .then(function(res) { return res.json(); })
-    .then(function(data) {
-      var matchingTag = (data.tags || []).find(function(t) { return t.tag === currentTagFilter; });
-      var matchingPaths = new Set((matchingTag ? matchingTag.files : []).map(function(f) { return f.relativePath; }));
-
-      document.querySelectorAll(".tree-file").forEach(function(el) {
-        var itemPath = el.dataset.relativePath || el.dataset.uri || "";
-        var show = false;
-        matchingPaths.forEach(function(p) {
-          if (itemPath.indexOf(p) !== -1) show = true;
-        });
-        el.style.display = show ? "" : "none";
-      });
-
-      document.querySelectorAll(".tree-folder").forEach(function(folder) {
-        var hasVisible = folder.querySelector(".tree-file:not([style*='display: none'])");
-        folder.style.display = hasVisible ? "" : "none";
-      });
-    });
-}

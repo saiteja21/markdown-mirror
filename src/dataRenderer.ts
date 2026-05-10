@@ -9,6 +9,7 @@ const DATA_EXTENSIONS: Record<string, DataFileType> = {
   ".yaml": "yaml",
   ".yml": "yaml",
   ".json": "json",
+  ".jsonc": "json",
   ".xml": "xml"
 };
 
@@ -43,7 +44,7 @@ export function renderDataFile(content: string, filePath: string): string {
       });
       parsed = parser.parse(content);
     } else {
-      parsed = JSON.parse(content);
+      parsed = parseJsonLenient(content);
     }
   } catch (err) {
     parseError = err instanceof Error ? err.message : "Failed to parse file.";
@@ -59,12 +60,20 @@ export function renderDataFile(content: string, filePath: string): string {
     : renderTree(parsed, 0, fileType === "xml");
 
   const highlightLang = fileType === "yaml" ? "yaml" : fileType === "xml" ? "xml" : "json";
-  let sourceHtml: string;
+  let highlightedSource: string;
   if (hljs.getLanguage(highlightLang)) {
-    sourceHtml = hljs.highlight(content, { language: highlightLang, ignoreIllegals: true }).value;
+    highlightedSource = hljs.highlight(content, { language: highlightLang, ignoreIllegals: true }).value;
   } else {
-    sourceHtml = escapeHtml(content);
+    highlightedSource = escapeHtml(content);
   }
+
+  const sourceLines = highlightedSource.split("\n");
+  const sourceTableRows = sourceLines.map((line, i) =>
+    `<tr><td class="data-line-num">${i + 1}</td><td class="data-line-code">${line}</td></tr>`
+  ).join("");
+  const sourceHtml = `<div class="data-source-lines"><table class="data-source-table">${sourceTableRows}</table></div>`;
+
+  const rawContentAttr = escapeHtml(content);
 
   return `
 <div class="data-file-viewer" data-file-type="${fileType}">
@@ -72,54 +81,61 @@ export function renderDataFile(content: string, filePath: string): string {
     <span class="data-file-name">${escapeHtml(fileName)}</span>
     <span class="data-file-badge">${fileType.toUpperCase()}</span>
     <div class="data-view-toggle">
-      <button class="data-view-btn active" data-view="tree" title="Tree View">Tree</button>
-      <button class="data-view-btn" data-view="source" title="Source View">Source</button>
+      <button class="data-view-btn active" data-view="tree" title="Tree View">🌳 Tree</button>
+      <button class="data-view-btn" data-view="source" title="Source View">&lt;/&gt; Source</button>
+      <button class="data-copy-all-btn" title="Copy raw content">📋 Copy</button>
     </div>
   </div>
+  <textarea class="data-raw-content" style="display:none">${rawContentAttr}</textarea>
   <div class="data-view-panel data-tree-panel active">${treeHtml}</div>
-  <div class="data-view-panel data-source-panel">
-    <pre><code class="hljs language-${highlightLang}">${sourceHtml}</code></pre>
-  </div>
+  <div class="data-view-panel data-source-panel">${sourceHtml}</div>
 </div>`;
+}
+
+function typeBadge(type: string): string {
+  return `<span class="data-type-badge data-type-${type.toLowerCase()}">${type}</span>`;
+}
+
+function copyBtn(value: string): string {
+  return `<button class="data-copy-btn" data-copy-value="${escapeHtml(value)}" title="Copy value">📋</button>`;
 }
 
 function renderTree(value: unknown, depth: number = 0, xmlMode: boolean = false): string {
   if (value === null || value === undefined) {
-    return `<span class="data-value data-null">null</span>`;
+    return `<span class="data-value data-null">null</span>${typeBadge("NULL")}${copyBtn("null")}`;
   }
 
   if (typeof value === "boolean") {
-    return `<span class="data-value data-boolean">${value}</span>`;
+    return `<span class="data-value data-boolean">${value}</span>${typeBadge("BOOL")}${copyBtn(String(value))}`;
   }
 
   if (typeof value === "number") {
-    return `<span class="data-value data-number">${value}</span>`;
+    return `<span class="data-value data-number">${value}</span>${typeBadge("NUM")}${copyBtn(String(value))}`;
   }
 
   if (typeof value === "string") {
-    return `<span class="data-value data-string">"${escapeHtml(value)}"</span>`;
+    return `<span class="data-value data-string">"${escapeHtml(value)}"</span>${typeBadge("STR")}${copyBtn(value)}`;
   }
 
   if (Array.isArray(value)) {
     if (value.length === 0) {
-      return `<span class="data-value data-empty">[]</span>`;
+      return `<span class="data-value data-empty">[ ]</span>${typeBadge("ARR")}`;
     }
     const items = value.map((item, index) => {
       const childHtml = renderTree(item, depth + 1, xmlMode);
       const isExpandable = typeof item === "object" && item !== null;
       return `<li class="data-node${isExpandable ? " data-expandable" : ""}">
-        <span class="data-key data-index">${index}</span>: ${childHtml}
+        <span class="data-key data-index">[${index}]</span>: ${childHtml}
       </li>`;
     }).join("");
-    return `<span class="data-bracket">[</span><span class="data-count">${value.length}</span>
-      <ul class="data-tree-list">${items}</ul>
-    <span class="data-bracket">]</span>`;
+    return `<span class="data-bracket">[ ${value.length} items ]</span>${typeBadge("ARR")}
+      <ul class="data-tree-list">${items}</ul>`;
   }
 
   if (typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>);
     if (entries.length === 0) {
-      return `<span class="data-value data-empty">{}</span>`;
+      return `<span class="data-value data-empty">{ }</span>${typeBadge("OBJ")}`;
     }
     const items = entries.map(([key, val]) => {
       const childHtml = renderTree(val, depth + 1, xmlMode);
@@ -130,7 +146,6 @@ function renderTree(value: unknown, depth: number = 0, xmlMode: boolean = false)
           <span class="data-xml-attr">${escapeHtml(key.slice(2))}="${escapeHtml(String(val))}"</span>
         </li>`;
       }
-      // Collect sibling attributes for badge display
       let attrBadges = "";
       if (xmlMode && typeof val === "object" && val !== null && !Array.isArray(val)) {
         const attrKeys = Object.keys(val as Record<string, unknown>).filter(k => k.startsWith("@_"));
@@ -144,9 +159,8 @@ function renderTree(value: unknown, depth: number = 0, xmlMode: boolean = false)
         <span class="data-key">${escapeHtml(key)}</span>${attrBadges}: ${childHtml}
       </li>`;
     }).join("");
-    return `<span class="data-bracket">{</span><span class="data-count">${entries.length}</span>
-      <ul class="data-tree-list">${items}</ul>
-    <span class="data-bracket">}</span>`;
+    return `<span class="data-bracket">{ ${entries.length} items }</span>${typeBadge("OBJ")}
+      <ul class="data-tree-list">${items}</ul>`;
   }
 
   return `<span class="data-value">${escapeHtml(String(value))}</span>`;
@@ -306,8 +320,8 @@ function renderOpenApiSpec(spec: Record<string, unknown>, rawContent: string, fi
     <span class="data-file-name">${escapeHtml(fileName)}</span>
     <span class="data-file-badge">OpenAPI</span>
     <div class="data-view-toggle">
-      <button class="data-view-btn active" data-view="tree" title="API View">API</button>
-      <button class="data-view-btn" data-view="source" title="Source View">Source</button>
+      <button class="data-view-btn active" data-view="tree" title="API View">🔌 API</button>
+      <button class="data-view-btn" data-view="source" title="Source View">&lt;/&gt; Source</button>
     </div>
   </div>
   <div class="data-view-panel data-tree-panel active">${html}</div>
@@ -323,4 +337,49 @@ function escapeHtml(text: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * Parse JSON leniently — strips single/multi-line comments and trailing commas
+ * so JSONC files (e.g. VS Code settings, mcp.json, tsconfig) render correctly.
+ */
+function parseJsonLenient(text: string): unknown {
+  // Remove single-line comments (// ...) and multi-line comments (/* ... */)
+  // while preserving strings that might contain // or /*
+  let result = "";
+  let i = 0;
+  let inString = false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inString) {
+      result += ch;
+      if (ch === "\\" && i + 1 < text.length) {
+        result += text[++i];
+      } else if (ch === '"') {
+        inString = false;
+      }
+      i++;
+    } else if (ch === '"') {
+      inString = true;
+      result += ch;
+      i++;
+    } else if (ch === "/" && i + 1 < text.length && text[i + 1] === "/") {
+      // Skip single-line comment
+      i += 2;
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (ch === "/" && i + 1 < text.length && text[i + 1] === "*") {
+      // Skip multi-line comment
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && i + 1 < text.length && text[i + 1] === "/")) i++;
+      i += 2;
+    } else {
+      result += ch;
+      i++;
+    }
+  }
+
+  // Remove trailing commas before } or ]
+  result = result.replace(/,(\s*[}\]])/g, "$1");
+
+  return JSON.parse(result);
 }

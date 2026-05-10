@@ -410,16 +410,6 @@ export class MirrorServer implements vscode.Disposable {
       res.sendFile(path.join(this.webRootPath, "dashboard.html"));
     });
 
-    this.app.get("/api/tags", async (_req, res) => {
-      try {
-        const tags = await this.buildTagIndex();
-        res.json({ tags });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
-        res.status(500).json({ error: message });
-      }
-    });
-
     this.app.get("/api/dashboard", async (_req, res) => {
       try {
         const data = await this.buildDashboardData();
@@ -431,52 +421,6 @@ export class MirrorServer implements vscode.Disposable {
     });
   }
 
-  private async buildTagIndex(): Promise<{tag: string; count: number; files: {uri: string; relativePath: string}[]}[]> {
-    const folders = vscode.workspace.workspaceFolders ?? [];
-    const tagMap = new Map<string, {uri: string; relativePath: string}[]>();
-
-    for (const folder of folders) {
-      const pattern = new vscode.RelativePattern(folder, "**/*.md");
-      const files = await vscode.workspace.findFiles(pattern);
-
-      for (const fileUri of files) {
-        try {
-          const bytes = await vscode.workspace.fs.readFile(fileUri);
-          const content = new TextDecoder("utf-8").decode(bytes);
-          const parsed = matter(content);
-
-          let tags: string[] = [];
-          if (Array.isArray(parsed.data?.tags)) {
-            tags = parsed.data.tags.map((t: unknown) => String(t).trim()).filter((t: string) => t.length > 0);
-          } else if (typeof parsed.data?.tags === "string") {
-            tags = parsed.data.tags.split(",").map((t: string) => t.trim()).filter((t: string) => t.length > 0);
-          }
-          if (typeof parsed.data?.category === "string") {
-            tags.push(parsed.data.category.trim());
-          }
-          if (Array.isArray(parsed.data?.categories)) {
-            tags.push(...parsed.data.categories.map((c: unknown) => String(c).trim()));
-          }
-
-          const relativePath = path.relative(folder.uri.fsPath, fileUri.fsPath).split(path.sep).join("/");
-
-          for (const tag of tags) {
-            const normalizedTag = tag.toLowerCase();
-            if (!tagMap.has(normalizedTag)) {
-              tagMap.set(normalizedTag, []);
-            }
-            tagMap.get(normalizedTag)!.push({ uri: fileUri.toString(), relativePath });
-          }
-        } catch {
-          // Skip files that can't be read
-        }
-      }
-    }
-
-    return Array.from(tagMap.entries())
-      .map(([tag, files]) => ({ tag, count: files.length, files }))
-      .sort((a, b) => b.count - a.count);
-  }
 
   private async buildDashboardData(): Promise<object> {
     const files = await vscode.workspace.findFiles("**/*.md", "**/{node_modules,.git}/**", 5000);
