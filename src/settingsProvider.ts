@@ -15,7 +15,7 @@ const SETTINGS: SettingSpec[] = [
     label: "File Extensions",
     description: "Which file types to load in the explorer",
     type: "multiSelect",
-    options: [".md", ".yaml", ".yml", ".json", ".txt", ".csv", ".tsv", ".xml", ".toml", ".ini", ".cfg", ".log", ".env", ".html", ".htm", ".css", ".js", ".ts", ".py", ".sh", ".bat", ".ps1"]
+    options: [".md", ".yaml", ".yml", ".json", ".xml", ".toml", ".txt"]
   },
   { key: "autoStart", label: "Auto Start", description: "Start when workspace opens", type: "boolean" },
   { key: "hostMode", label: "Host Mode", description: "Where preview opens", type: "enum", enumValues: ["vscode", "browser", "both"] },
