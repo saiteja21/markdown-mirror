@@ -1,0 +1,35 @@
+name: Release to VS Code Marketplace
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Package VSIX
+        run: npx @vscode/vsce package --no-update-package-json
+
+      - name: Upload VSIX as release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.vsix"
+
+      - name: Publish to VS Code Marketplace
+        run: npx @vscode/vsce publish --no-update-package-json
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}

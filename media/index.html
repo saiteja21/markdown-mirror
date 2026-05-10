@@ -43,6 +43,7 @@
         </div>
       </div>
       <nav id="tree" class="file-tree" aria-label="File tree"></nav>
+      <div id="tag-cloud" class="mm-tag-cloud-panel" style="display:none;"></div>
       <section id="favorites-panel" class="favorites-panel" aria-label="Pinned files">
         <header class="favorites-header">
           <span class="tree-root-label">Favorites</span>
@@ -195,6 +196,19 @@
       <div class="cmd-palette-card">
         <input type="text" id="cmd-palette-input" class="cmd-palette-input" placeholder="Search files, headings, or type &gt; for actions..." autocomplete="off" />
         <div id="cmd-palette-results" class="cmd-palette-results"></div>
+      </div>
+    </div>
+
+    <!-- Workspace search dialog -->
+    <div id="workspace-search-overlay" class="search-results-overlay" role="dialog" aria-label="Workspace search">
+      <div class="search-results-dialog">
+        <div class="search-dialog-header">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="workspace-search-input" class="search-dialog-input" placeholder="Search workspace content..." autocomplete="off" />
+          <button id="workspace-search-close" class="search-dialog-close" type="button" title="Close">&times;</button>
+        </div>
+        <div id="workspace-search-results" class="search-results-body"></div>
+        <div id="workspace-search-status" class="search-status" hidden></div>
       </div>
     </div>
   </div>

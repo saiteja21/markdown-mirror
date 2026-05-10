@@ -3,6 +3,9 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { WebSocketServer, WebSocket } from "ws";
 import { MarkdownRenderer } from "./renderer";
+import { isDataFile, renderDataFile } from "./dataRenderer";
+
+const SUPPORTED_LANGUAGE_IDS = new Set(["markdown", "yaml", "json", "jsonc"]);
 
 interface WatcherMessage {
   type: "connected" | "document-updated" | "document-deleted" | "viewport-updated" | "settings-updated";
@@ -30,7 +33,7 @@ export class MarkdownWatcher implements vscode.Disposable {
     private readonly assetBaseUrl: string
   ) {
     this.wsServer = new WebSocketServer({ server: this.httpServer, path: "/ws" });
-    this.fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.md");
+    this.fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{md,yaml,yml,json}");
 
     this.wsServer.on("connection", (socket) => {
       this.send(socket, {
@@ -45,19 +48,19 @@ export class MarkdownWatcher implements vscode.Disposable {
       this.fileWatcher.onDidCreate((uri) => void this.publishFromDisk(uri, "created")),
       this.fileWatcher.onDidDelete((uri) => this.publishDelete(uri)),
       vscode.workspace.onDidChangeTextDocument((event) => {
-        if (event.document.languageId !== "markdown") {
+        if (!SUPPORTED_LANGUAGE_IDS.has(event.document.languageId)) {
           return;
         }
         this.schedulePublishFromEditor(event.document, event.contentChanges);
       }),
       vscode.window.onDidChangeTextEditorVisibleRanges((event) => {
-        if (event.textEditor.document.languageId !== "markdown") {
+        if (!SUPPORTED_LANGUAGE_IDS.has(event.textEditor.document.languageId)) {
           return;
         }
         this.throttledPublishViewport(event.textEditor);
       }),
       vscode.window.onDidChangeActiveTextEditor((editor) => {
-        if (!editor || editor.document.languageId !== "markdown") {
+        if (!editor || !SUPPORTED_LANGUAGE_IDS.has(editor.document.languageId)) {
           return;
         }
         this.publishViewport(editor);
@@ -108,8 +111,8 @@ export class MarkdownWatcher implements vscode.Disposable {
   private async publishFromDisk(uri: vscode.Uri, reason: "saved" | "created"): Promise<void> {
     try {
       const bytes = await vscode.workspace.fs.readFile(uri);
-      const markdown = new TextDecoder("utf-8").decode(bytes);
-      this.publish(uri, markdown, reason);
+      const content = new TextDecoder("utf-8").decode(bytes);
+      this.publish(uri, content, reason);
     } catch {
       // The file may have been removed between event and read.
     }
@@ -124,12 +127,17 @@ export class MarkdownWatcher implements vscode.Disposable {
     });
   }
 
-  private publish(uri: vscode.Uri, markdown: string, reason: "typed" | "saved" | "created", changedLine?: number): void {
-    const html = this.renderer.render({
-      markdown,
-      documentUri: uri,
-      assetBaseUrl: this.assetBaseUrl
-    });
+  private publish(uri: vscode.Uri, content: string, reason: "typed" | "saved" | "created", changedLine?: number): void {
+    let html: string;
+    if (isDataFile(uri.fsPath)) {
+      html = renderDataFile(content, uri.fsPath);
+    } else {
+      html = this.renderer.render({
+        markdown: content,
+        documentUri: uri,
+        assetBaseUrl: this.assetBaseUrl
+      });
+    }
 
     this.broadcast({
       type: "document-updated",

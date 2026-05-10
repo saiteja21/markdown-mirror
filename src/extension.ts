@@ -6,17 +6,21 @@ import { promisify } from "util";
 import { MirrorServer } from "./server";
 import { MarkdownWatcher } from "./watcher";
 import { MarkdownRenderer } from "./renderer";
+import { isDataFile, renderDataFile } from "./dataRenderer";
 import { MarkdownTreeProvider } from "./treeProvider";
 import { MarkdownTocProvider, TocHeading } from "./tocProvider";
 import { SettingsTreeProvider, toggleSetting } from "./settingsProvider";
 import {
   auditDocument,
   extractHeadings,
+  extractExternalLinks,
+  checkExternalUrl,
   findBacklinks,
   renderAuditReport,
   runWorkspaceAudit,
   toWorkspaceRelative,
-  WorkspaceAuditSummary
+  WorkspaceAuditSummary,
+  ExternalLinkCheckResult
 } from "./quality";
 
 type AutoOpenMode = "always" | "firstRun" | "never";
@@ -25,6 +29,9 @@ type ExportProfile = "web" | "review" | "print";
 const FIRST_RUN_OPENED_KEY = "markdownMirror.firstRunBrowserOpened";
 const execFileAsync = promisify(cp.execFile);
 type BrowserLaunchMode = "compare" | "slides";
+
+const EXTERNAL_LINK_CACHE_TTL = 86400000; // 24 hours
+const externalLinkCache = new Map<string, { result: ExternalLinkCheckResult; checkedAt: number }>();
 
 function getNonce(): string {
   let text = "";
@@ -69,18 +76,32 @@ class MirrorRuntime implements vscode.Disposable {
   }
 
   public async renderDocumentHtml(documentUri: vscode.Uri): Promise<{ html: string; title: string }> {
-    if (documentUri.scheme !== "file" || !documentUri.fsPath.toLowerCase().endsWith(".md")) {
-      throw new Error("Only file-based markdown documents are supported.");
+    if (documentUri.scheme !== "file") {
+      throw new Error("Only file-based documents are supported.");
+    }
+
+    const fsPathLower = documentUri.fsPath.toLowerCase();
+    const isMarkdown = fsPathLower.endsWith(".md");
+    const isData = isDataFile(documentUri.fsPath);
+
+    if (!isMarkdown && !isData) {
+      throw new Error("Unsupported file type.");
     }
 
     const bytes = await vscode.workspace.fs.readFile(documentUri);
-    const markdown = new TextDecoder("utf-8").decode(bytes);
+    const content = new TextDecoder("utf-8").decode(bytes);
     const baseUrl = this.currentBaseUrl ?? await this.start();
-    const html = this.renderer.render({
-      markdown,
-      documentUri,
-      assetBaseUrl: baseUrl
-    });
+
+    let html: string;
+    if (isData) {
+      html = renderDataFile(content, documentUri.fsPath);
+    } else {
+      html = this.renderer.render({
+        markdown: content,
+        documentUri,
+        assetBaseUrl: baseUrl
+      });
+    }
 
     return {
       html,
@@ -1106,6 +1127,110 @@ export function activate(context: vscode.ExtensionContext): void {
       editor.selection = new vscode.Selection(position, position);
       editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.AtTop);
     }),
+    vscode.commands.registerCommand("markdownMirror.checkExternalLinks", async () => {
+      const config = vscode.workspace.getConfiguration("markdownMirror");
+      if (!config.get<boolean>("enableExternalLinkCheck", true)) {
+        void vscode.window.showInformationMessage("External link checking is disabled in settings.");
+        return;
+      }
+
+      await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: "Checking external links...",
+        cancellable: true
+      }, async (progress, token) => {
+        const files = await vscode.workspace.findFiles("**/*.md", "**/{node_modules,.git}/**", 5000);
+        if (files.length === 0) {
+          void vscode.window.showInformationMessage("No markdown files found in workspace.");
+          return;
+        }
+
+        // Collect all external links from all files
+        const allLinks: { uri: vscode.Uri; relativePath: string; line: number; url: string }[] = [];
+        for (const uri of files) {
+          if (token.isCancellationRequested) { return; }
+          try {
+            const bytes = await vscode.workspace.fs.readFile(uri);
+            const markdown = new TextDecoder("utf-8").decode(bytes);
+            const relativePath = toWorkspaceRelative(uri) || path.basename(uri.fsPath);
+            const links = extractExternalLinks(markdown);
+            for (const link of links) {
+              allLinks.push({ uri, relativePath, line: link.line, url: link.url });
+            }
+          } catch {
+            // skip unreadable files
+          }
+        }
+
+        // Deduplicate URLs
+        const uniqueUrls = [...new Set(allLinks.map((l) => l.url))];
+        if (uniqueUrls.length === 0) {
+          void vscode.window.showInformationMessage("No external links found in workspace.");
+          return;
+        }
+
+        // Check URLs with concurrency limit of 5
+        const results = new Map<string, ExternalLinkCheckResult>();
+        const now = Date.now();
+        let completed = 0;
+
+        const checkUrl = async (url: string): Promise<void> => {
+          const cached = externalLinkCache.get(url);
+          if (cached && (now - cached.checkedAt) < EXTERNAL_LINK_CACHE_TTL) {
+            results.set(url, cached.result);
+          } else {
+            const result = await checkExternalUrl(url);
+            externalLinkCache.set(url, { result, checkedAt: now });
+            results.set(url, result);
+          }
+          completed++;
+          progress.report({ message: `${completed}/${uniqueUrls.length} URLs checked`, increment: (100 / uniqueUrls.length) });
+        };
+
+        // Process in chunks of 5 for concurrency
+        for (let i = 0; i < uniqueUrls.length; i += 5) {
+          if (token.isCancellationRequested) { return; }
+          const chunk = uniqueUrls.slice(i, i + 5);
+          await Promise.all(chunk.map(checkUrl));
+        }
+
+        // Build broken link items
+        const brokenItems = allLinks
+          .filter((link) => {
+            const result = results.get(link.url);
+            return result && !result.ok;
+          })
+          .map((link) => {
+            const result = results.get(link.url)!;
+            const statusText = typeof result.status === "number" ? `${result.status}` : result.status;
+            return {
+              label: `${link.relativePath}:L${link.line}`,
+              description: `${statusText} — ${link.url}`,
+              uri: link.uri,
+              line: link.line
+            };
+          });
+
+        if (brokenItems.length === 0) {
+          void vscode.window.showInformationMessage("All external links are valid");
+          return;
+        }
+
+        const selected = await vscode.window.showQuickPick(brokenItems, {
+          title: `Broken External Links (${brokenItems.length})`,
+          placeHolder: "Select a broken link to open in editor"
+        });
+
+        if (!selected) { return; }
+
+        const doc = await vscode.workspace.openTextDocument(selected.uri);
+        const editor = await vscode.window.showTextDocument(doc, { preview: false });
+        const lineIndex = Math.min(Math.max(selected.line - 1, 0), Math.max(doc.lineCount - 1, 0));
+        const position = new vscode.Position(lineIndex, 0);
+        editor.selection = new vscode.Selection(position, position);
+        editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.AtTop);
+      });
+    }),
     vscode.commands.registerCommand("markdownMirror.findHeading", async () => {
       const targetUri = resolveTargetMarkdownUri();
       if (!targetUri) {
@@ -1371,6 +1496,197 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       }
     }),
+    vscode.commands.registerCommand("markdownMirror.compareWithGit", async () => {
+      const targetUri = resolveTargetMarkdownUri();
+      if (!targetUri) {
+        void vscode.window.showInformationMessage("Open a markdown file in preview or editor first.");
+        return;
+      }
+
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(targetUri);
+      if (!workspaceFolder) {
+        void vscode.window.showWarningMessage("File is not in an open workspace folder.");
+        return;
+      }
+
+      const relativePath = path.relative(workspaceFolder.uri.fsPath, targetUri.fsPath).split(path.sep).join("/");
+
+      // Get current content
+      const currentBytes = await vscode.workspace.fs.readFile(targetUri);
+      const currentMarkdown = new TextDecoder("utf-8").decode(currentBytes);
+
+      // Get git HEAD content
+      let previousMarkdown: string;
+      try {
+        previousMarkdown = await new Promise<string>((resolve, reject) => {
+          cp.execFile("git", ["show", `HEAD:${relativePath}`], { cwd: workspaceFolder.uri.fsPath, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
+            if (err) reject(err);
+            else resolve(stdout);
+          });
+        });
+      } catch {
+        void vscode.window.showWarningMessage("Could not retrieve git history for this file. Is it tracked by git?");
+        return;
+      }
+
+      if (currentMarkdown === previousMarkdown) {
+        void vscode.window.showInformationMessage("No changes detected compared to git HEAD.");
+        return;
+      }
+
+      // Render both versions using a standalone renderer
+      const diffRenderer = new MarkdownRenderer();
+      try {
+        const baseUrl = runtime.currentBaseUrl ?? await runtime.start();
+        const previousHtml = diffRenderer.render({ markdown: previousMarkdown, documentUri: targetUri, assetBaseUrl: baseUrl });
+        const currentHtml = diffRenderer.render({ markdown: currentMarkdown, documentUri: targetUri, assetBaseUrl: baseUrl });
+
+        const diffHtml = computeRenderedDiff(previousHtml, currentHtml);
+        showDiffPanel(context, diffHtml, relativePath);
+      } finally {
+        diffRenderer.dispose();
+      }
+    }),
+    vscode.workspace.onDidRenameFiles(async (event) => {
+      const enabled = vscode.workspace.getConfiguration("markdownMirror").get<boolean>("autoFixLinksOnRename", true);
+      if (!enabled) {
+        return;
+      }
+
+      const mdRenames = event.files.filter(
+        (f) => f.oldUri.fsPath.toLowerCase().endsWith(".md") && f.newUri.fsPath.toLowerCase().endsWith(".md")
+      );
+      if (mdRenames.length === 0) {
+        return;
+      }
+
+      const allMdFiles = await vscode.workspace.findFiles("**/*.md");
+      const edit = new vscode.WorkspaceEdit();
+      let totalReferences = 0;
+      const affectedFiles = new Set<string>();
+
+      for (const rename of mdRenames) {
+        const oldFsPath = rename.oldUri.fsPath;
+        const newFsPath = rename.newUri.fsPath;
+        const oldBaseName = path.basename(oldFsPath, ".md");
+        const newBaseName = path.basename(newFsPath, ".md");
+
+        for (const fileUri of allMdFiles) {
+          // Skip the renamed file itself
+          if (fileUri.fsPath === newFsPath || fileUri.fsPath === oldFsPath) {
+            continue;
+          }
+
+          let content: string;
+          try {
+            const rawBytes = await vscode.workspace.fs.readFile(fileUri);
+            content = Buffer.from(rawBytes).toString("utf-8");
+          } catch {
+            continue;
+          }
+
+          const fileDir = path.dirname(fileUri.fsPath);
+          const lines = content.split("\n");
+          let fileModified = false;
+
+          for (let i = 0; i < lines.length; i++) {
+            let line = lines[i];
+            let lineModified = false;
+
+            // Match standard markdown links: [text](path) or [text](path#anchor)
+            const mdLinkRegex = /\[([^\]]*)\]\(([^)]+)\)/g;
+            let match: RegExpExecArray | null;
+            const replacements: { start: number; end: number; replacement: string }[] = [];
+
+            while ((match = mdLinkRegex.exec(line)) !== null) {
+              const linkText = match[1];
+              const fullRef = match[2];
+
+              // Skip external URLs and non-file references
+              if (fullRef.startsWith("http://") || fullRef.startsWith("https://") || fullRef.startsWith("mailto:") || fullRef.startsWith("#")) {
+                continue;
+              }
+
+              // Separate anchor from path
+              const anchorIndex = fullRef.indexOf("#");
+              const linkPath = anchorIndex >= 0 ? fullRef.substring(0, anchorIndex) : fullRef;
+              const anchor = anchorIndex >= 0 ? fullRef.substring(anchorIndex) : "";
+
+              if (!linkPath) {
+                continue;
+              }
+
+              // Resolve the link path relative to the referencing file's directory
+              const resolvedPath = path.resolve(fileDir, linkPath.replace(/\//g, "\\"));
+
+              if (resolvedPath.toLowerCase() === oldFsPath.toLowerCase()) {
+                const newRelative = path.relative(fileDir, newFsPath).replace(/\\/g, "/");
+                const newFullRef = newRelative + anchor;
+                const replacement = `[${linkText}](${newFullRef})`;
+                replacements.push({
+                  start: match.index,
+                  end: match.index + match[0].length,
+                  replacement,
+                });
+                lineModified = true;
+              }
+            }
+
+            // Match wiki links: [[target]] or [[target|display]]
+            const wikiLinkRegex = /\[\[([^\]|]+)(?:\|([^\]]*))?\]\]/g;
+            while ((match = wikiLinkRegex.exec(line)) !== null) {
+              const target = match[1].trim();
+              const displayText = match[2];
+
+              // Check if the wiki link target matches the old file name
+              const targetLower = target.toLowerCase();
+              const oldBaseNameLower = oldBaseName.toLowerCase();
+
+              const isMatch =
+                targetLower === oldBaseNameLower ||
+                targetLower === oldBaseNameLower + ".md";
+
+              if (isMatch) {
+                const newTarget = targetLower.endsWith(".md") ? newBaseName + ".md" : newBaseName;
+                const replacement = displayText !== undefined
+                  ? `[[${newTarget}|${displayText}]]`
+                  : `[[${newTarget}]]`;
+                replacements.push({
+                  start: match.index,
+                  end: match.index + match[0].length,
+                  replacement,
+                });
+                lineModified = true;
+              }
+            }
+
+            if (lineModified) {
+              // Apply replacements in reverse order to preserve indices
+              replacements.sort((a, b) => b.start - a.start);
+              let updatedLine = line;
+              for (const r of replacements) {
+                updatedLine = updatedLine.substring(0, r.start) + r.replacement + updatedLine.substring(r.end);
+              }
+              const range = new vscode.Range(i, 0, i, line.length);
+              edit.replace(fileUri, range, updatedLine);
+              totalReferences += replacements.length;
+              fileModified = true;
+            }
+          }
+
+          if (fileModified) {
+            affectedFiles.add(fileUri.fsPath);
+          }
+        }
+      }
+
+      if (totalReferences > 0) {
+        await vscode.workspace.applyEdit(edit);
+        void vscode.window.showInformationMessage(
+          `Markdown Mirror: Updated ${totalReferences} references in ${affectedFiles.size} files.`
+        );
+      }
+    }),
     vscode.workspace.onDidOpenTextDocument((document) => {
       if (document.languageId === "markdown" || document.uri.fsPath.toLowerCase().endsWith(".md")) {
         scheduleDiagnostics(document.uri);
@@ -1536,4 +1852,116 @@ async function autoStart(runtime: MirrorRuntime, startRuntime: (manualStart: boo
 async function hasMarkdownFiles(): Promise<boolean> {
   const files = await vscode.workspace.findFiles("**/*.md", "**/{node_modules,.git}/**", 1);
   return files.length > 0;
+}
+
+function computeRenderedDiff(oldHtml: string, newHtml: string): string {
+  const tokenize = (html: string): string[] =>
+    html.split(/(\s+|<[^>]+>)/).filter((t) => t.length > 0);
+
+  const oldTokens = tokenize(oldHtml);
+  const newTokens = tokenize(newHtml);
+
+  // Guard against extremely large diffs that would exhaust memory
+  const MAX_TOKENS = 5000;
+  if (oldTokens.length > MAX_TOKENS || newTokens.length > MAX_TOKENS) {
+    return `<div class="mm-diff-header" style="background:#fff3cd;padding:12px;border-radius:6px;margin-bottom:16px;">
+      <strong>⚠️ Document too large for rendered diff</strong> (${oldTokens.length} / ${newTokens.length} tokens). Showing current version only.
+    </div>${newHtml}`;
+  }
+
+  // LCS-based diff using Myers-like approach
+  const n = oldTokens.length;
+  const m = newTokens.length;
+
+  // Build LCS table (optimised for moderate sizes)
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = 1; i <= n; i++) {
+    for (let j = 1; j <= m; j++) {
+      if (oldTokens[i - 1] === newTokens[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1] + 1;
+      } else {
+        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+  }
+
+  // Back-trace to produce diff operations
+  const ops: Array<{ type: "keep" | "del" | "ins"; token: string }> = [];
+  let i = n;
+  let j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && oldTokens[i - 1] === newTokens[j - 1]) {
+      ops.push({ type: "keep", token: oldTokens[i - 1] });
+      i--;
+      j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.push({ type: "ins", token: newTokens[j - 1] });
+      j--;
+    } else {
+      ops.push({ type: "del", token: oldTokens[i - 1] });
+      i--;
+    }
+  }
+  ops.reverse();
+
+  // Merge consecutive same-type ops and wrap in <ins>/<del>
+  const parts: string[] = [];
+  let idx = 0;
+  while (idx < ops.length) {
+    const op = ops[idx];
+    if (op.type === "keep") {
+      parts.push(op.token);
+      idx++;
+    } else {
+      const collected: string[] = [];
+      const kind = op.type;
+      while (idx < ops.length && ops[idx].type === kind) {
+        collected.push(ops[idx].token);
+        idx++;
+      }
+      const joined = collected.join("");
+      if (kind === "del") {
+        parts.push(`<del class="mm-diff-del">${joined}</del>`);
+      } else {
+        parts.push(`<ins class="mm-diff-add">${joined}</ins>`);
+      }
+    }
+  }
+
+  return parts.join("");
+}
+
+function showDiffPanel(context: vscode.ExtensionContext, diffHtml: string, fileName: string): void {
+  const panel = vscode.window.createWebviewPanel(
+    "markdownMirrorDiff",
+    `Diff: ${fileName}`,
+    vscode.ViewColumn.Beside,
+    { enableScripts: false }
+  );
+
+  const safeFileName = fileName.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  panel.webview.html = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; line-height: 1.6; }
+    .mm-diff-del { background-color: #ffeef0; color: #b31d28; text-decoration: line-through; }
+    .mm-diff-add { background-color: #e6ffec; color: #22863a; text-decoration: none; }
+    h1, h2, h3, h4, h5, h6 { margin-top: 1.5em; }
+    pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto; }
+    code { background: #f0f0f0; padding: 2px 4px; border-radius: 3px; font-size: 0.9em; }
+    img { max-width: 100%; }
+    table { border-collapse: collapse; } th, td { border: 1px solid #ddd; padding: 6px 12px; }
+    .mm-diff-header { background: #f0f0f0; padding: 10px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 0.9em; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="mm-diff-header">
+    <strong>Rendered Diff:</strong> ${safeFileName} — comparing HEAD → current
+    <br><span style="color:#22863a">■</span> Added &nbsp; <span style="color:#b31d28">■</span> Removed
+  </div>
+  ${diffHtml}
+</body>
+</html>`;
 }

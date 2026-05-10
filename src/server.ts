@@ -3,7 +3,10 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import express from "express";
 import * as vscode from "vscode";
+import matter from "gray-matter";
 import { MarkdownRenderer } from "./renderer";
+import { isDataFile, renderDataFile } from "./dataRenderer";
+import { auditDocument, toWorkspaceRelative } from "./quality";
 
 export interface WorkspaceTreeNode {
   name: string;
@@ -325,12 +328,16 @@ export class MirrorServer implements vscode.Disposable {
       try {
         const documentUri = vscode.Uri.parse(uriRaw);
         if (documentUri.scheme !== "file") {
-          res.status(400).json({ error: "Only file-backed markdown documents are supported." });
+          res.status(400).json({ error: "Only file-backed documents are supported." });
           return;
         }
 
-        if (!documentUri.fsPath.toLowerCase().endsWith(".md")) {
-          res.status(400).json({ error: "Only markdown documents are supported." });
+        const fsPathLower = documentUri.fsPath.toLowerCase();
+        const isMarkdown = fsPathLower.endsWith(".md");
+        const isData = !isMarkdown && this.isDataFileEnabled() && isDataFile(documentUri.fsPath);
+
+        if (!isMarkdown && !isData) {
+          res.status(400).json({ error: "Unsupported file type." });
           return;
         }
 
@@ -346,21 +353,23 @@ export class MirrorServer implements vscode.Disposable {
         }
 
         const bytes = await vscode.workspace.fs.readFile(documentUri);
-        const markdown = new TextDecoder("utf-8").decode(bytes);
+        const content = new TextDecoder("utf-8").decode(bytes);
         const baseUrl = `http://${this.host}:${this.getPort()}`;
         const embedImages = req.query.native === "true";
 
         let html: string;
-        if (embedImages) {
+        if (isData) {
+          html = renderDataFile(content, documentUri.fsPath);
+        } else if (embedImages) {
           html = await this.renderer.renderWithEmbeddedImages({
-            markdown,
+            markdown: content,
             documentUri,
             assetBaseUrl: baseUrl,
             embedImages: true
           });
         } else {
           html = this.renderer.render({
-            markdown,
+            markdown: content,
             documentUri,
             assetBaseUrl: baseUrl
           });
@@ -375,6 +384,190 @@ export class MirrorServer implements vscode.Disposable {
         res.status(404).json({ error: "Document not found." });
       }
     });
+
+    this.app.get("/api/search", async (req, res) => {
+      const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      if (!query) {
+        res.status(400).json({ error: "Missing required query parameter: q" });
+        return;
+      }
+
+      if (!this.isSearchEnabled()) {
+        res.status(403).json({ error: "Search is disabled in settings." });
+        return;
+      }
+
+      try {
+        const results = await this.searchWorkspace(query);
+        res.json({ query, results });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Search failed.";
+        res.status(500).json({ error: message });
+      }
+    });
+
+    this.app.get("/dashboard", (_req, res) => {
+      res.sendFile(path.join(this.webRootPath, "dashboard.html"));
+    });
+
+    this.app.get("/api/tags", async (_req, res) => {
+      try {
+        const tags = await this.buildTagIndex();
+        res.json({ tags });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        res.status(500).json({ error: message });
+      }
+    });
+
+    this.app.get("/api/dashboard", async (_req, res) => {
+      try {
+        const data = await this.buildDashboardData();
+        res.json(data);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unknown error";
+        res.status(500).json({ error: message });
+      }
+    });
+  }
+
+  private async buildTagIndex(): Promise<{tag: string; count: number; files: {uri: string; relativePath: string}[]}[]> {
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    const tagMap = new Map<string, {uri: string; relativePath: string}[]>();
+
+    for (const folder of folders) {
+      const pattern = new vscode.RelativePattern(folder, "**/*.md");
+      const files = await vscode.workspace.findFiles(pattern);
+
+      for (const fileUri of files) {
+        try {
+          const bytes = await vscode.workspace.fs.readFile(fileUri);
+          const content = new TextDecoder("utf-8").decode(bytes);
+          const parsed = matter(content);
+
+          let tags: string[] = [];
+          if (Array.isArray(parsed.data?.tags)) {
+            tags = parsed.data.tags.map((t: unknown) => String(t).trim()).filter((t: string) => t.length > 0);
+          } else if (typeof parsed.data?.tags === "string") {
+            tags = parsed.data.tags.split(",").map((t: string) => t.trim()).filter((t: string) => t.length > 0);
+          }
+          if (typeof parsed.data?.category === "string") {
+            tags.push(parsed.data.category.trim());
+          }
+          if (Array.isArray(parsed.data?.categories)) {
+            tags.push(...parsed.data.categories.map((c: unknown) => String(c).trim()));
+          }
+
+          const relativePath = path.relative(folder.uri.fsPath, fileUri.fsPath).split(path.sep).join("/");
+
+          for (const tag of tags) {
+            const normalizedTag = tag.toLowerCase();
+            if (!tagMap.has(normalizedTag)) {
+              tagMap.set(normalizedTag, []);
+            }
+            tagMap.get(normalizedTag)!.push({ uri: fileUri.toString(), relativePath });
+          }
+        } catch {
+          // Skip files that can't be read
+        }
+      }
+    }
+
+    return Array.from(tagMap.entries())
+      .map(([tag, files]) => ({ tag, count: files.length, files }))
+      .sort((a, b) => b.count - a.count);
+  }
+
+  private async buildDashboardData(): Promise<object> {
+    const files = await vscode.workspace.findFiles("**/*.md", "**/{node_modules,.git}/**", 5000);
+    const maxLineLength = Number(vscode.workspace.getConfiguration("markdownMirror").get<number>("maxLineLength", 120));
+
+    const pathSet = new Set<string>();
+    const relativePaths = new Map<string, vscode.Uri>();
+
+    for (const uri of files) {
+      const relativePath = toWorkspaceRelative(uri);
+      if (relativePath) {
+        pathSet.add(relativePath);
+        relativePaths.set(relativePath, uri);
+      }
+    }
+
+    const documents: {
+      relativePath: string;
+      uri: string;
+      healthScore: number;
+      findings: { total: number; errors: number; warnings: number; info: number; details: unknown[] };
+      metrics: { words: number; characters: number; readingMinutes: number; fleschReadingEase: number };
+      lastModified: number;
+      daysSinceModified: number;
+      headingCount: number;
+      linkCount: number;
+    }[] = [];
+
+    const entries = Array.from(relativePaths.entries());
+    const batchSize = 50;
+
+    for (let i = 0; i < entries.length; i += batchSize) {
+      const batch = entries.slice(i, i + batchSize);
+      const results = await Promise.all(batch.map(async ([relativePath, uri]) => {
+        try {
+          const bytes = await vscode.workspace.fs.readFile(uri);
+          const content = new TextDecoder("utf-8").decode(bytes);
+
+          const audit = auditDocument({ uri, relativePath, markdown: content }, pathSet, maxLineLength);
+
+          const stat = await vscode.workspace.fs.stat(uri);
+          const lastModified = stat.mtime;
+
+          const errorPenalty = audit.findings.filter(f => f.severity === "error").length * 15;
+          const warningPenalty = audit.findings.filter(f => f.severity === "warning").length * 5;
+          const infoPenalty = audit.findings.filter(f => f.severity === "info").length * 1;
+          const readabilityPenalty = Math.abs(audit.metrics.fleschReadingEase - 65) > 30 ? 10 : 0;
+          const daysSinceModified = Math.floor((Date.now() - lastModified) / (1000 * 60 * 60 * 24));
+          const stalenessPenalty = daysSinceModified > 90 ? Math.min(20, Math.floor((daysSinceModified - 90) / 30) * 5) : 0;
+          const healthScore = Math.max(0, Math.min(100, 100 - errorPenalty - warningPenalty - infoPenalty - readabilityPenalty - stalenessPenalty));
+
+          return {
+            relativePath,
+            uri: uri.toString(),
+            healthScore,
+            findings: {
+              total: audit.findings.length,
+              errors: audit.findings.filter(f => f.severity === "error").length,
+              warnings: audit.findings.filter(f => f.severity === "warning").length,
+              info: audit.findings.filter(f => f.severity === "info").length,
+              details: audit.findings.slice(0, 10)
+            },
+            metrics: audit.metrics,
+            lastModified,
+            daysSinceModified,
+            headingCount: audit.headings.length,
+            linkCount: audit.links.length
+          };
+        } catch {
+          return undefined;
+        }
+      }));
+
+      for (const result of results) {
+        if (result) {
+          documents.push(result);
+        }
+      }
+    }
+
+    documents.sort((a, b) => a.healthScore - b.healthScore);
+
+    const totalDocs = documents.length;
+    const avgHealth = totalDocs > 0 ? Math.round(documents.reduce((sum, d) => sum + d.healthScore, 0) / totalDocs) : 0;
+    const staleDocs = documents.filter(d => d.daysSinceModified > 90).length;
+    const errorDocs = documents.filter(d => d.findings.errors > 0).length;
+
+    return {
+      summary: { totalDocs, avgHealth, staleDocs, errorDocs },
+      documents
+    };
   }
 
   private async buildWorkspaceTree(): Promise<WorkspaceTreeNode[]> {
@@ -437,7 +630,7 @@ export class MirrorServer implements vscode.Disposable {
         continue;
       }
 
-      if (kind === vscode.FileType.File && name.toLowerCase().endsWith(".md")) {
+      if (kind === vscode.FileType.File && (name.toLowerCase().endsWith(".md") || (this.isDataFileEnabled() && isDataFile(name)))) {
         nodes.push({
           name,
           kind: "file",
@@ -659,6 +852,102 @@ export class MirrorServer implements vscode.Disposable {
         return "neutral";
       default:
         return "default";
+    }
+  }
+
+  private isDataFileEnabled(): boolean {
+    return vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enableDataFiles", true);
+  }
+
+  private isSearchEnabled(): boolean {
+    return vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enableSearch", true);
+  }
+
+  private isSupportedFile(name: string): boolean {
+    if (name.toLowerCase().endsWith(".md")) {
+      return true;
+    }
+    return this.isDataFileEnabled() && isDataFile(name);
+  }
+
+  private async searchWorkspace(query: string): Promise<Array<{ uri: string; relativePath: string; matches: Array<{ line: number; text: string }> }>> {
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    const excludePatterns = this.getExcludePatterns();
+    const queryLower = query.toLowerCase();
+    const maxResults = 200;
+    const results: Array<{ uri: string; relativePath: string; matches: Array<{ line: number; text: string }> }> = [];
+    let totalMatches = 0;
+
+    for (const folder of folders) {
+      if (totalMatches >= maxResults) {
+        break;
+      }
+      await this.searchDirectory(folder.uri, "", excludePatterns, queryLower, results, maxResults, () => totalMatches, (count) => { totalMatches = count; });
+    }
+
+    return results;
+  }
+
+  private async searchDirectory(
+    directoryUri: vscode.Uri,
+    relativeBase: string,
+    excludePatterns: string[],
+    queryLower: string,
+    results: Array<{ uri: string; relativePath: string; matches: Array<{ line: number; text: string }> }>,
+    maxResults: number,
+    getTotal: () => number,
+    setTotal: (n: number) => void
+  ): Promise<void> {
+    const entries = await vscode.workspace.fs.readDirectory(directoryUri);
+
+    for (const [name, kind] of entries) {
+      if (getTotal() >= maxResults) {
+        return;
+      }
+      if (name === ".git" || name === "node_modules") {
+        continue;
+      }
+
+      const childRelativePath = relativeBase ? `${relativeBase}/${name}` : name;
+      if (this.isExcluded(childRelativePath, excludePatterns)) {
+        continue;
+      }
+
+      const childUri = vscode.Uri.joinPath(directoryUri, name);
+
+      if (kind === vscode.FileType.Directory) {
+        await this.searchDirectory(childUri, childRelativePath, excludePatterns, queryLower, results, maxResults, getTotal, setTotal);
+        continue;
+      }
+
+      if (kind === vscode.FileType.File && this.isSupportedFile(name)) {
+        try {
+          const bytes = await vscode.workspace.fs.readFile(childUri);
+          const content = new TextDecoder("utf-8").decode(bytes);
+          const lines = content.split(/\r?\n/);
+          const matches: Array<{ line: number; text: string }> = [];
+
+          for (let i = 0; i < lines.length; i++) {
+            if (getTotal() >= maxResults) {
+              break;
+            }
+            if (lines[i].toLowerCase().includes(queryLower)) {
+              matches.push({ line: i + 1, text: lines[i].substring(0, 300) });
+              setTotal(getTotal() + 1);
+            }
+          }
+
+          if (matches.length > 0) {
+            results.push({
+              uri: childUri.toString(),
+              relativePath: childRelativePath,
+              matches
+            });
+          }
+        } catch {
+          // Skip unreadable files
+        }
+      }
     }
   }
 }

@@ -2,303 +2,314 @@
 
 ![Markdown Mirror Banner](./banner.png)
 
-## Author
+<p align="center">
+<strong>Your workspace docs, beautifully rendered. Zero config.</strong>
+</p>
 
-Sai Teja Nagamothu  
+<p align="center">
+<a href="https://marketplace.visualstudio.com/items?itemName=ForkedCode.markdown-mirror"><img src="https://img.shields.io/visual-studio-marketplace/v/ForkedCode.markdown-mirror?label=Marketplace&color=0078d4&logo=visual-studio-code&logoColor=white" alt="VS Code Marketplace" /></a>
+<a href="https://marketplace.visualstudio.com/items?itemName=ForkedCode.markdown-mirror"><img src="https://img.shields.io/visual-studio-marketplace/i/ForkedCode.markdown-mirror?label=Installs&color=28a745" alt="Installs" /></a>
+<img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT" />
+</p>
+
+<p align="center">
+<em>Live preview · Workspace explorer · Diagrams · Math · Search · Export · Quality tools</em>
+</p>
+
+---
+
+Markdown Mirror turns your VS Code workspace into a live documentation site. Open any folder with markdown files and get an instant, navigable preview — inside VS Code or in your browser — that updates on every keystroke.
+
+Built for **docs-driven teams**, **technical writers**, and **engineers** who want a polished reading experience without leaving their editor.
+
+## ⚡ Quick Start
+
+```
+1. Install from the VS Code Marketplace
+2. Open a workspace with .md files
+3. Preview appears automatically — start writing
+```
+
+That's it. No config files, no build step, no deploy. Markdown Mirror auto-discovers your files and starts a local preview server.
+
+> **Tip:** Use `Ctrl+Shift+P` → `Markdown Mirror: Start` if auto-start is disabled.
+
+## ✨ What You Get
+
+### 📖 Rich Rendering
+
+| Feature | Details |
+|---------|---------|
+| **Markdown** | Full CommonMark + GFM with syntax highlighting via `highlight.js` |
+| **Mermaid diagrams** | Flowcharts, sequence, Gantt, ER, and more — with PNG download |
+| **PlantUML diagrams** | UML class, sequence, activity — rendered via configurable server |
+| **KaTeX math** | Inline `$...$` and block `$$...$$` expressions |
+| **YAML/JSON viewer** | Tree + source views with toggle, auto-detected from file extensions |
+| **OpenAPI specs** | Structured API documentation auto-detected from OpenAPI 3.x files |
+| **Frontmatter cards** | YAML frontmatter rendered as collapsible metadata cards |
+| **Callouts & admonitions** | `> [!NOTE]`, `> [!WARNING]`, etc. |
+| **Wiki links** | `[[page]]` style cross-references |
+| **Task checkboxes** | Interactive — click to toggle, writes back to source file |
+| **Content transclusion** | `<!-- include: path/to/file.md -->` pulls in content from other files |
+
+### 🗂️ Workspace Navigation
+
+- **File explorer sidebar** with full folder tree and file counts
+- **Full-text search** across all workspace files (`/` to focus)
+- **Tag cloud** — browse and filter by frontmatter tags
+- **Table of contents** panel for heading-based navigation
+- **Tabs** for recently opened documents
+- **Favorites** — pin frequently used files
+- **Backlinks** — see which files link to the current document
+- **Find Heading** — jump to any heading across the workspace
+
+### 🔄 Live Preview
+
+- **WebSocket hot reload** — changes appear instantly, no page refresh
+- **Scroll sync** — editor and preview scroll together
+- **Side-by-side compare** — open two documents simultaneously
+- **Rendered diff** — visually compare current file with its last git commit
+- **Light/dark theme** toggle with VS Code theme sync in native mode
+- **Reading width** vs full-width toggle
+- **Focus mode** — distraction-free reading
+- **Image lightbox** — click to zoom
+
+### 📤 Export
+
+| Format | How |
+|--------|-----|
+| **PDF** | Print flow with optimized layout |
+| **HTML** | Standalone file with inlined styles and Mermaid SVGs |
+| **Word (.docx)** | One-click export |
+| **HTML with profiles** | Web, Review, or Print — tailored export styles |
+| **Workspace bundle** | Compose multiple docs into a single HTML |
+
+### 🛡️ Quality & Maintenance
+
+- **Document audit** — readability, structure, and style checks
+- **Workspace audit** — scan all files at once
+- **Quality dashboard** — visual overview at `/dashboard` in browser
+- **Internal link validation** — find broken `[text](path)` references
+- **External link checker** — verify URLs return 200 (HEAD/GET with redirect following)
+- **Auto-fix links on rename** — move or rename a `.md` file, all references update automatically
+- **Quality diagnostics** — optional Problems panel integration
+
+### 🌐 Sharing & Collaboration
+
+- **Dev Tunnel sharing** — share your live preview with teammates over the internet
+- **Slide mode** — present `---`-separated sections as a slideshow
+- **Keyboard shortcuts** — navigate, search, and act without touching the mouse
+
+## 🖥️ Preview Modes
+
+| Mode | Setting | Description |
+|------|---------|-------------|
+| **Native** | `"vscode"` (default) | Preview inside a VS Code panel — theme syncs automatically |
+| **Browser** | `"browser"` | Full-featured UI in your default browser |
+| **Both** | `"both"` | Native panel + browser simultaneously |
+
+Set via `markdownMirror.hostMode` in VS Code settings.
+
+## 🎹 Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `/` | Focus search |
+| `j` / `k` | Navigate file list |
+| `Enter` | Open focused file |
+| `[` / `]` | Previous / next file |
+| `t` | Toggle TOC panel |
+| `d` | Toggle light/dark theme |
+| `p` | Print / Export to PDF |
+| `?` | Show all shortcuts |
+
+## 🎯 Commands
+
+All commands are available via `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS):
+
+| Command | Description |
+|---------|-------------|
+| `Markdown Mirror: Start` | Start the preview server and open preview |
+| `Markdown Mirror: Open Preview` | Open native VS Code preview panel |
+| `Markdown Mirror: Stop` | Stop the preview server |
+| `Markdown Mirror: Preview Active File` | Jump to current editor file in preview |
+| `Markdown Mirror: Export HTML` | Export current document as standalone HTML |
+| `Markdown Mirror: Export HTML with Profile` | Export with Web / Review / Print profile |
+| `Markdown Mirror: Export to Word` | Export current document as .docx |
+| `Markdown Mirror: Print / PDF` | Print or save as PDF |
+| `Markdown Mirror: Compare Mode` | Side-by-side two-document view |
+| `Markdown Mirror: Compare with Git (Rendered Diff)` | Visual diff against last git commit |
+| `Markdown Mirror: Slides Mode` | Present sections as slides |
+| `Markdown Mirror: Review Document` | Run quality audit on current file |
+| `Markdown Mirror: Review Workspace` | Run quality audit across all files |
+| `Markdown Mirror: Validate Links` | Check internal markdown links |
+| `Markdown Mirror: Check External Links` | Verify external URLs are reachable |
+| `Markdown Mirror: Show Backlinks` | Find files that reference current file |
+| `Markdown Mirror: Find Heading` | Jump to any heading in workspace |
+| `Markdown Mirror: Toggle Focus Mode` | Distraction-free reading mode |
+| `Markdown Mirror: Compose Bundle` | Combine multiple docs into one HTML |
+| `Markdown Mirror: Share via Dev Tunnel` | Share preview over the internet |
+| `Markdown Mirror: Toggle Setting` | Quick-toggle any Mirror setting |
+| `Markdown Mirror: Copy Server URL` | Copy the local server URL |
+| `Markdown Mirror: Refresh Files` | Refresh the file tree |
+| `Markdown Mirror: Refresh TOC` | Refresh the table of contents |
+| `Markdown Mirror: Review Mode` | Open in review-optimized layout |
+
+## ⚙️ Settings
+
+Search `Markdown Mirror` in VS Code Settings, or edit `settings.json` directly.
+
+### Core
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `autoStart` | `true` | Auto-start when markdown workspace opens |
+| `autoOpenMode` | `"firstRun"` | `"always"` / `"firstRun"` / `"never"` — controls browser auto-open |
+| `hostMode` | `"vscode"` | `"vscode"` / `"browser"` / `"both"` |
+| `port` | `0` | Fixed port (0 = auto-assign). Use fixed port for dev tunnels |
+
+### Content Scoping
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `rootPaths` | `[]` | Folder paths to scan (empty = entire workspace) |
+| `excludePaths` | `[]` | Paths or globs to exclude from the tree |
+| `defaultFilePath` | `""` | Auto-open this file on launch (e.g., `"README.md"`) |
+| `startExplorerCollapsed` | `false` | Start with sidebar collapsed |
+
+### Rendering
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enableMath` | `true` | KaTeX math rendering |
+| `enableMermaid` | `true` | Mermaid diagram rendering |
+| `enablePlantUml` | `false` | PlantUML rendering (opt-in — calls external server) |
+| `plantUmlServer` | `"https://www.plantuml.com/plantuml"` | PlantUML server URL |
+| `showFrontmatter` | `"card"` | `"card"` or `"none"` |
+| `mermaidTheme` | `"default"` | `"default"` / `"dark"` / `"forest"` / `"neutral"` |
+| `htmlMode` | `"safe"` | `"safe"` (sanitized) or `"trusted"` (raw HTML allowed) |
+| `enableTransclusion` | `true` | Enable `<!-- include: path -->` directives |
+| `enableDataFiles` | `true` | Show YAML/JSON files in explorer with rich preview |
+| `dataFileExtensions` | `[".yaml", ".yml", ".json"]` | File types treated as data files |
+| `enableSearch` | `true` | Full-text search in browser preview |
+
+### Appearance
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `defaultTheme` | `"light"` | Initial theme for new sessions |
+| `defaultWidthMode` | `"full"` | `"full"` or `"reading"` width |
+| `defaultCompareMode` | `false` | Start in compare mode |
+| `defaultTocVisible` | `true` | Show TOC panel on load |
+| `customCssPath` | `""` | Workspace-relative CSS file to inject |
+| `nativeFollowVsCodeTheme` | `true` | Native preview mirrors VS Code theme |
+| `nativeLockThemeToggle` | `true` | Lock theme toggle when syncing with VS Code |
+| `nativeUiProfile` | `"focused"` | `"focused"` (minimal) or `"classic"` (full UI) |
+
+### Feature Toggles
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enablePrint` | `true` | Show Print / PDF action |
+| `enableHtmlExport` | `true` | Show Export HTML action |
+| `enableWordExport` | `true` | Show Export Word action |
+| `enableSlides` | `true` | Show Slides mode action |
+| `enableCompare` | `true` | Show Compare mode action |
+| `enableToc` | `true` | Show TOC panel toggle |
+| `enableThemeToggle` | `true` | Show theme toggle |
+| `enableWidthToggle` | `true` | Show width toggle |
+
+### Quality & Maintenance
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enableQualityDiagnostics` | `false` | Show quality issues in Problems panel |
+| `enableExternalLinkCheck` | `true` | Enable external URL verification |
+| `autoFixLinksOnRename` | `true` | Auto-update links when files are renamed/moved |
+| `maxLineLength` | `0` | Line length limit for quality checks (0 = disabled) |
+| `offlineMode` | `true` | Block external resources in preview |
+
+### Minimal Config Example
+
+```json
+{
+  "markdownMirror.autoStart": true,
+  "markdownMirror.hostMode": "vscode"
+}
+```
+
+### Scoped Folders Example
+
+```json
+{
+  "markdownMirror.rootPaths": ["docs", "specs"],
+  "markdownMirror.excludePaths": ["drafts", "**/archive"]
+}
+```
+
+## 🔒 Security
+
+- Preview server binds to `127.0.0.1` only — never exposed to the network
+- All asset requests are workspace-bounded to prevent path traversal
+- HTML sanitization enabled by default (`htmlMode: "safe"`)
+- Offline mode blocks external resource loading by default
+- PlantUML rendering is opt-in (disabled by default) since it calls an external server
+
+## 🐛 Troubleshooting
+
+<details>
+<summary><strong>Math not rendering</strong></summary>
+
+- Confirm `markdownMirror.enableMath` is `true`
+- Use standard delimiters: `$E = mc^2$` for inline, `$$\int_0^1 x^2\,dx$$` for block
+- Restart: `Markdown Mirror: Stop` → `Markdown Mirror: Start`
+</details>
+
+<details>
+<summary><strong>Mermaid diagrams not appearing</strong></summary>
+
+- Confirm `markdownMirror.enableMermaid` is `true`
+- Use fenced code blocks with `mermaid` language, or Azure DevOps `:::mermaid` syntax
+</details>
+
+<details>
+<summary><strong>PlantUML diagrams not rendering</strong></summary>
+
+- Enable via `markdownMirror.enablePlantUml: true` (off by default)
+- Requires network access to the PlantUML server (default: `plantuml.com`)
+- Won't work when `offlineMode` is `true`
+- For private servers, set `markdownMirror.plantUmlServer` to your server URL
+</details>
+
+<details>
+<summary><strong>Preview looks stale or frozen</strong></summary>
+
+- Run `Developer: Reload Window`
+- Verify VS Code has write access to workspace files
+- Check that the server is running (look for the Markdown Mirror status bar item)
+</details>
+
+<details>
+<summary><strong>External link check shows false positives</strong></summary>
+
+- Some sites block automated requests — results are cached to reduce noise
+- Disable with `markdownMirror.enableExternalLinkCheck: false`
+</details>
+
+## 📜 License
+
+MIT — see [LICENSE](LICENSE) for details.
+
+Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) · Legal checklist: [docs/release-legal-checklist.md](docs/release-legal-checklist.md)
+
+## 👤 Author
+
+**Sai Teja Nagamothu**
 [![GitHub](https://img.shields.io/badge/GitHub-saiteja21-181717?logo=github&logoColor=white)](https://github.com/saiteja21)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-sai--teja--n-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/saiteja-n/)
 
-Live Markdown preview for your full VS Code workspace with instant browser updates, file explorer navigation, Mermaid diagrams, KaTeX math, TOC, slides, and export tools to pdf, MS word.
+---
 
-Perfect for docs-driven teams, technical writers, and engineers who want a docs-site style workflow directly from local markdown files.
-
-## Why Markdown Mirror
-
-Markdown Mirror gives you a docs-site feeling directly from your VS Code workspace.
-It scans markdown files, serves a mirrored structure, and updates the browser preview on every keystroke or save.
-
-## Features
-
-- Modern browser UI with workspace explorer and rich markdown renderer
-- Full-width rendering by default with persistent reading-width toggle
-- Side-by-side compare mode (open two markdown docs simultaneously)
-- TOC sidebar for heading-based navigation in the active pane
-- Light/Dark preview theme toggle
-- Print / PDF export via browser print flow
-- KaTeX math rendering (configurable)
-- Word/character count and reading-time stats bar
-- Keyboard shortcuts for fast navigation and actions
-- Heading anchor links for deep-linking sections
-- Mermaid theme control via settings
-- Editor/browser scroll sync
-- Slide mode for `---` separated sections
-- Export current document to standalone HTML
-- Interactive task list checkbox toggles
-- YAML frontmatter card rendering
-- Tabs for recently opened documents
-- Image lightbox/zoom
-- Favorites (pinned files) in sidebar
-- Back-to-top quick action
-- Internal markdown link validation
-- Custom CSS injection from workspace
-- Multi-workspace visual markers + sidebar file count
-- Auto-starts on markdown workspaces (configurable)
-- WebSocket hot updates (no full-page refresh flicker)
-- Relative image path support through local asset mapping
-- Mermaid diagram rendering for fenced `mermaid` code blocks and Azure DevOps `:::mermaid` containers
-- Download Mermaid diagrams as PNG from browser
-- Native preview shell with quick actions, runtime status chips, compact mode, and keyboard shortcuts
-- Syntax highlighting with `markdown-it` + `highlight.js`
-- Localhost-only server guard (`127.0.0.1`)
-
-## Commands
-
-- `Markdown Mirror: Start`
-- `Markdown Mirror: Open Native`
-- `Markdown Mirror: Stop`
-
-## Use In VS Code
-
-### Open Mirror From Command Palette
-
-<table>
-	<thead>
-		<tr>
-			<th>Step</th>
-			<th>Action</th>
-		</tr>
-	</thead>
-	<tbody>
-		<tr>
-			<td>1</td>
-			<td>Open Command Palette.</td>
-		</tr>
-		<tr>
-			<td>2</td>
-			<td>Use shortcut: Windows/Linux <code>Ctrl+Shift+P</code>, macOS <code>Cmd+Shift+P</code>.</td>
-		</tr>
-		<tr>
-			<td>3</td>
-			<td>Run <code>Markdown Mirror: Start</code>.</td>
-		</tr>
-		<tr>
-			<td>4</td>
-			<td>A local server URL appears (for example <code>http://127.0.0.1:51315</code>).</td>
-		</tr>
-		<tr>
-			<td>5</td>
-			<td>Preview opens in VS Code and/or browser based on your host mode settings.</td>
-		</tr>
-	</tbody>
-</table>
-
-If browser mode is enabled and browser does not open, copy the URL from the notification and open it manually.
-
-### Close Mirror
-
-1. Open Command Palette:
-	- Windows/Linux: `Ctrl+Shift+P`
-	- macOS: `Cmd+Shift+P`
-2. Run `Markdown Mirror: Stop`.
-
-This stops the local server for the current VS Code session.
-
-### Configure Settings In VS Code
-
-1. Open Settings UI:
-	- Windows/Linux: `Ctrl+,`
-	- macOS: `Cmd+,`
-2. Search for `Markdown Mirror`.
-3. Configure:
-	- `markdownMirror.autoStart`
-	- `markdownMirror.autoOpenMode`
-	- `markdownMirror.hostMode`
-	- `markdownMirror.nativeFollowVsCodeTheme`
-	- `markdownMirror.nativeLockThemeToggle`
-	- `markdownMirror.nativeUiProfile`
-	- `markdownMirror.rootPath`
-	- `markdownMirror.enableMath`
-	- `markdownMirror.mermaidTheme`
-	- `markdownMirror.showFrontmatter`
-	- `markdownMirror.customCssPath`
-
-You can also open Settings (JSON) and set values directly.
-
-Default behavior (recommended for most users):
-
-- Leave `markdownMirror.rootPaths` empty.
-- Markdown Mirror uses the currently open workspace root and discovers all markdown files under it.
-
-Example (default behavior):
-
-```json
-{
-	"markdownMirror.autoStart": true,
-	"markdownMirror.autoOpenMode": "always",
-	"markdownMirror.hostMode": "vscode"
-}
-```
-
-Optional scoped-folder example (only if you want to limit discovery):
-
-- Set `markdownMirror.rootPaths` to one or more folders relative to your workspace root.
-- Example below scans `<workspace>/ProjectDocs` and `<workspace>/TeamNotes`.
-
-```json
-{
-	"markdownMirror.rootPaths": [
-		"ProjectDocs",
-		"TeamNotes"
-	]
-}
-```
-
-Backward compatibility:
-
-- `markdownMirror.rootPath` still works as a legacy fallback when `markdownMirror.rootPaths` is empty.
-- If `markdownMirror.rootPaths` is explicitly set (including `[]`), it takes precedence and legacy `rootPath` is ignored.
-
-Path format rules:
-
-- Paths are relative to the root folder of each workspace folder (for example `ProjectDocs`, `guides/release-notes`, `knowledge/base`).
-- Do not use absolute paths (for example `C:/repo/docs` or `/repo/docs`).
-- Do not use path traversal segments (`..` or `.`).
-- In multi-root workspaces, each entry is resolved inside each workspace folder.
-- You can set these in **User** settings for global defaults, then override in **Workspace** or workspace-folder settings when needed.
-- Default setting: `markdownMirror.rootPaths` is empty (`[]`), which means scan all markdown files under each workspace folder.
-- If configured paths are missing in a workspace folder, Markdown Mirror falls back to scanning that workspace folder root.
-
-## Settings
-
-- `markdownMirror.autoStart`
-	- `true` (default): auto-start mirror when markdown files are present in workspace.
-- `markdownMirror.autoOpenMode`
-	- `always`: open browser on every auto-start.
-	- `firstRun` (default): open browser only on first auto-start for this machine/profile.
-	- `never`: do not auto-open browser on auto-start.
-- `markdownMirror.hostMode`
-	- `vscode` (default): host preview in a native VS Code panel.
-	- `browser`: host preview in an external browser.
-	- `both`: host preview in both VS Code panel and external browser.
-- `markdownMirror.nativeFollowVsCodeTheme`
-	- `true` (default): native preview follows active VS Code light/dark theme.
-	- `false`: native preview can use its own saved light/dark preference.
-- `markdownMirror.nativeLockThemeToggle`
-	- `true` (default): lock in-preview theme toggle while following VS Code theme.
-	- `false`: allow in-preview theme toggling even when VS Code theme sync is enabled.
-- `markdownMirror.nativeUiProfile`
-	- `focused` (default): native-first streamlined layout with reduced clutter.
-	- `classic`: keeps the full browser-style in-app layout inside native host.
-- `markdownMirror.enableMermaid`
-	- `true` (default): render Mermaid diagrams from markdown code fences.
-- `markdownMirror.htmlMode`
-	- `safe` (default): sanitize rendered HTML.
-	- `trusted`: allow raw HTML from markdown without sanitization (trusted content only).
-- `markdownMirror.rootPath`
-	- Legacy single-path fallback.
-	- Used only when `markdownMirror.rootPaths` is empty.
-	- Relative path only; absolute paths and traversal segments are ignored.
-- `markdownMirror.rootPaths`
-	- Empty (default): use the currently open workspace root and scan all markdown files.
-	- Array of relative paths (for example `["docs", "notes"]`): only render markdown tree from those folders.
-	- Relative paths only; absolute paths and traversal segments are ignored.
-- `markdownMirror.enableMath`
-	- `true` (default): enable KaTeX rendering for inline and block math.
-	- `false`: disable math rendering.
-- `markdownMirror.mermaidTheme`
-	- `default` (default): uses Mermaid default in light mode and dark in dark mode.
-	- `dark`: always use Mermaid dark theme.
-	- `forest`: always use Mermaid forest theme.
-	- `neutral`: always use Mermaid neutral theme.
-- `markdownMirror.showFrontmatter`
-	- `card` (default): render YAML frontmatter as a collapsible metadata card.
-	- `none`: do not display frontmatter card.
-- `markdownMirror.customCssPath`
-	- Empty (default): use built-in styles only.
-	- Relative path (for example `docs/preview.css`): inject custom CSS from workspace into preview.
-- `markdownMirror.offlineMode`
-	- `true` (default): block external HTTP/HTTPS resources in preview/export flows.
-- `markdownMirror.defaultCompareMode`
-	- `true` (default): open preview in compare mode for new browser sessions.
-- `markdownMirror.defaultTocVisible`
-	- `true` (default): show TOC panel by default for new browser sessions.
-- `markdownMirror.defaultTheme`
-	- `light` (default): start preview in light mode.
-	- `dark`: start preview in dark mode.
-- `markdownMirror.defaultWidthMode`
-	- `full` (default): start with full-width content.
-	- `reading`: start with reading-width content.
-- `markdownMirror.enablePrint`
-	- `true` (default): show Print / PDF action.
-- `markdownMirror.enableHtmlExport`
-	- `true` (default): show Export HTML action.
-- `markdownMirror.enableWordExport`
-	- `true` (default): show Export Word action.
-- `markdownMirror.enableSlides`
-	- `true` (default): show Slides mode action.
-- `markdownMirror.enableCompare`
-	- `true` (default): show Compare mode action.
-- `markdownMirror.enableToc`
-	- `true` (default): show TOC panel toggle.
-- `markdownMirror.enableThemeToggle`
-	- `true` (default): show Light/Dark theme toggle.
-- `markdownMirror.enableWidthToggle`
-	- `true` (default): show Reading/Full width toggle.
-
-Manual command start follows `markdownMirror.hostMode`.
-
-## Security
-
-- HTTP server listens on `127.0.0.1`.
-- Requests from non-loopback addresses are rejected.
-- Asset requests are workspace-bounded to prevent path traversal.
-
-## Licensing And Third-Party Compliance
-
-Markdown Mirror follows a local-first policy for implementation, but uses third-party libraries where they are the most practical and secure choice.
-
-Product features, command names, and UX labels are intentionally original to Markdown Mirror.
-The extension does not copy source code from other markdown tools or extensions.
-Compatibility behaviors (for example wiki links and callout blocks) are implemented independently using public markdown syntax patterns.
-
-- Third-party notices and attributions: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- Release-time legal checklist: see [docs/release-legal-checklist.md](docs/release-legal-checklist.md).
-
-Release policy:
-
-- Prefer first-party implementation when practical.
-- Use third-party components only with clear value.
-- Before release, verify all required notices and license obligations are included.
-
-## Quick Start
-
-1. Install the extension from the VS Code Marketplace.
-2. Open a workspace that contains `.md` files.
-3. Extension auto-starts (if enabled) and opens native preview/browser based on `hostMode` and `autoOpenMode`.
-4. Click any markdown file in the left explorer.
-5. Edit markdown in VS Code and see live updates in browser.
-6. Use topbar controls for Compare, TOC, Slides, Export HTML, theme, and Reading Width.
-
-## Keyboard Shortcuts
-
-- `/` Focus search
-- `j` / `k` Move through files
-- `Enter` Open focused file
-- `[` / `]` Open previous/next file
-- `t` Toggle TOC panel
-- `d` Toggle light/dark theme
-- `p` Print / Export to PDF
-- `?` Show shortcuts help
-
-## Troubleshooting
-
-- Math not rendering:
-	- Confirm `markdownMirror.enableMath` is enabled in VS Code Settings.
-	- Use standard delimiters: inline `$E = mc^2$`, block `$$\int_0^1 x^2\,dx = \frac{1}{3}$$`.
-	- If needed, run `Markdown Mirror: Stop` and then `Markdown Mirror: Start`.
-- Mermaid not rendering:
-	- Confirm `markdownMirror.enableMermaid` is enabled.
-	- Use either fenced syntax with language `mermaid` or Azure DevOps-style `:::mermaid` container syntax.
-- Browser or native preview looks stale:
-	- Run `Developer: Reload Window` once.
-	- Verify VS Code has write access to the workspace files.
+<p align="center">
+<strong>If Markdown Mirror helps your workflow, <a href="https://marketplace.visualstudio.com/items?itemName=ForkedCode.markdown-mirror&ssr=false#review-details">leave a review on the Marketplace</a> ⭐</strong>
+</p>

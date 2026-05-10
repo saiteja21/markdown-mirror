@@ -1,6 +1,8 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "fs";
 import * as fsPromises from "fs/promises";
+import * as zlib from "zlib";
 import MarkdownIt from "markdown-it";
 import hljs from "highlight.js";
 import sanitizeHtml from "sanitize-html";
@@ -75,13 +77,21 @@ export class MarkdownRenderer implements vscode.Disposable {
         return `<div class="mermaid">${diagram}</div>`;
       }
 
+      if (language === "plantuml" && this.isPlantUmlEnabled()) {
+        const encoded = this.encodePlantUml(token.content);
+        const serverUrl = this.getPlantUmlServer();
+        const imgSrc = `${serverUrl}/svg/${encoded}`;
+        return `<div class="mm-plantuml-container"><img src="${imgSrc}" alt="PlantUML diagram" class="mm-plantuml-diagram" /><button class="mm-plantuml-download" data-src="${imgSrc.replace('/svg/', '/png/')}" title="Download as PNG">⬇ PNG</button></div>`;
+      }
+
       return this.defaultFenceRule(tokens, idx, options, env, self);
     };
   }
 
   public render(request: RenderRequest): string {
     const parsed = matter(request.markdown);
-    const markdown = this.normalizeWikiLinks(this.normalizeCallouts(this.normalizeAzureDevOpsMermaidContainers(parsed.content)));
+    const resolved = this.resolveIncludes(parsed.content, request.documentUri);
+    const markdown = this.normalizeWikiLinks(this.normalizeCallouts(this.normalizeAzureDevOpsMermaidContainers(resolved)));
     const env = {
       documentUri: request.documentUri,
       assetBaseUrl: request.assetBaseUrl,
@@ -97,7 +107,8 @@ export class MarkdownRenderer implements vscode.Disposable {
 
   public async renderWithEmbeddedImages(request: RenderRequest): Promise<string> {
     const parsed = matter(request.markdown);
-    const markdown = this.normalizeWikiLinks(this.normalizeCallouts(this.normalizeAzureDevOpsMermaidContainers(parsed.content)));
+    const resolved = this.resolveIncludes(parsed.content, request.documentUri);
+    const markdown = this.normalizeWikiLinks(this.normalizeCallouts(this.normalizeAzureDevOpsMermaidContainers(resolved)));
     const env = {
       documentUri: request.documentUri,
       assetBaseUrl: request.assetBaseUrl,
@@ -209,6 +220,43 @@ export class MarkdownRenderer implements vscode.Disposable {
     return vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enableMermaid", true);
   }
 
+  private isPlantUmlEnabled(): boolean {
+    return vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enablePlantUml", false);
+  }
+
+  private getPlantUmlServer(): string {
+    const server = vscode.workspace.getConfiguration("markdownMirror").get<string>("plantUmlServer", "https://www.plantuml.com/plantuml").replace(/\/+$/, "");
+    return server;
+  }
+
+  private encodePlantUml(source: string): string {
+    const deflated = zlib.deflateRawSync(Buffer.from(source, "utf-8"));
+    return this.encode64(deflated);
+  }
+
+  private encode64(data: Uint8Array): string {
+    const ENCODE_TABLE = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
+    let result = "";
+    for (let i = 0; i < data.length; i += 3) {
+      if (i + 2 === data.length) {
+        result += this.append3bytes(data[i], data[i + 1], 0, ENCODE_TABLE);
+      } else if (i + 1 === data.length) {
+        result += this.append3bytes(data[i], 0, 0, ENCODE_TABLE);
+      } else {
+        result += this.append3bytes(data[i], data[i + 1], data[i + 2], ENCODE_TABLE);
+      }
+    }
+    return result;
+  }
+
+  private append3bytes(b1: number, b2: number, b3: number, table: string): string {
+    const c1 = b1 >> 2;
+    const c2 = ((b1 & 0x3) << 4) | (b2 >> 4);
+    const c3 = ((b2 & 0xF) << 2) | (b3 >> 6);
+    const c4 = b3 & 0x3F;
+    return table[c1] + table[c2] + table[c3] + table[c4];
+  }
+
   private applyHtmlMode(html: string): string {
     const mode = vscode.workspace.getConfiguration("markdownMirror").get<string>("htmlMode", "safe");
     if (mode === "trusted") {
@@ -236,16 +284,20 @@ export class MarkdownRenderer implements vscode.Disposable {
         "summary",
         "dl",
         "dt",
-        "dd"
+        "dd",
+        "button",
+        "ins",
+        "del"
       ]),
       allowedAttributes: {
         ...sanitizeHtml.defaults.allowedAttributes,
-        "*": ["class", "id", "title", "aria-label", "data-source-line"],
+        "*": ["class", "id", "title", "aria-label", "data-source-line", "data-source", "data-src", "data-view", "data-file-type"],
         a: ["href", "name", "target", "rel"],
         img: ["src", "alt", "title", "width", "height"],
         code: ["class"],
-        div: ["class"],
+        div: ["class", "data-source", "data-file-type"],
         span: ["class"],
+        button: ["class", "data-src", "data-view", "type", "title"],
         input: ["type", "checked", "disabled", "id", "data-source-line"]
       },
       allowedSchemes: ["http", "https", "mailto", "data"],
@@ -294,6 +346,41 @@ export class MarkdownRenderer implements vscode.Disposable {
   private isFrontmatterCardEnabled(): boolean {
     const mode = vscode.workspace.getConfiguration("markdownMirror").get<string>("showFrontmatter", "card");
     return mode !== "none";
+  }
+
+  private resolveIncludes(markdown: string, documentUri: vscode.Uri, visited?: Set<string>, depth?: number): string {
+    const config = vscode.workspace.getConfiguration("markdownMirror");
+    if (!config.get<boolean>("enableTransclusion", true)) {
+      return markdown;
+    }
+
+    const maxDepth = 5;
+    const currentDepth = depth ?? 0;
+    const visitedSet = visited ?? new Set<string>();
+
+    if (currentDepth >= maxDepth) {
+      return markdown;
+    }
+
+    visitedSet.add(documentUri.fsPath.toLowerCase());
+
+    return markdown.replace(/<!--\s*include:\s*(.+?)\s*-->/gi, (match, relativePath: string) => {
+      try {
+        const resolvedPath = path.resolve(path.dirname(documentUri.fsPath), relativePath.trim());
+
+        if (visitedSet.has(resolvedPath.toLowerCase())) {
+          return `\n\n> ⚠️ **Circular include detected:** \`${relativePath}\`\n\n`;
+        }
+
+        const content = fs.readFileSync(resolvedPath, "utf-8");
+
+        const resolvedContent = this.resolveIncludes(content, vscode.Uri.file(resolvedPath), new Set(visitedSet), currentDepth + 1);
+
+        return `\n\n<div class="mm-transclusion" data-source="${relativePath}">\n<div class="mm-transclusion-label">📎 Included from: ${relativePath}</div>\n\n${resolvedContent}\n\n</div>\n\n`;
+      } catch {
+        return `\n\n> ⚠️ **Include not found:** \`${relativePath}\`\n\n`;
+      }
+    });
   }
 
   private normalizeAzureDevOpsMermaidContainers(markdown: string): string {

@@ -256,6 +256,7 @@ async function bootstrap() {
   setupTocToggle();
 
   await loadTree();
+  loadTags();
   applyLaunchOptionsAfterTreeLoad();
   applyCustomCss();
   connectSocket();
@@ -4105,3 +4106,282 @@ window.__markdownMirrorMermaidInitialized = false;
     menu.setAttribute("hidden", "");
   });
 })();
+
+/* ── Data File Tree View Interactions ── */
+(function initDataTreeInteractions() {
+  document.addEventListener("click", function(e) {
+    var target = e.target;
+    if (!target) { return; }
+
+    // Data tree expand/collapse
+    var node = target.closest(".data-node.data-expandable");
+    if (node && target.closest(".data-key")) {
+      node.classList.toggle("collapsed");
+      e.preventDefault();
+      return;
+    }
+
+    // Data view toggle (tree/source)
+    if (target.classList.contains("data-view-btn")) {
+      var viewer = target.closest(".data-file-viewer");
+      if (!viewer) { return; }
+      var view = target.getAttribute("data-view");
+      var btns = viewer.querySelectorAll(".data-view-btn");
+      var panels = viewer.querySelectorAll(".data-view-panel");
+      for (var i = 0; i < btns.length; i++) { btns[i].classList.remove("active"); }
+      for (var j = 0; j < panels.length; j++) { panels[j].classList.remove("active"); }
+      target.classList.add("active");
+      var panelClass = view === "source" ? "data-source-panel" : "data-tree-panel";
+      var activePanel = viewer.querySelector("." + panelClass);
+      if (activePanel) { activePanel.classList.add("active"); }
+      e.preventDefault();
+    }
+  });
+})();
+
+/* ── Workspace Full-Text Search ── */
+(function initWorkspaceSearch() {
+  var overlayEl = document.getElementById("workspace-search-overlay");
+  var inputEl = document.getElementById("workspace-search-input");
+  var resultsEl = document.getElementById("workspace-search-results");
+  var statusEl = document.getElementById("workspace-search-status");
+  var closeEl = document.getElementById("workspace-search-close");
+  if (!overlayEl || !inputEl || !resultsEl || !closeEl) { return; }
+
+  var debounceTimer = null;
+  var abortController = null;
+
+  function openSearch() {
+    overlayEl.classList.add("open");
+    inputEl.value = "";
+    resultsEl.innerHTML = "";
+    if (statusEl) { statusEl.hidden = true; }
+    setTimeout(function() { inputEl.focus(); }, 50);
+  }
+
+  function closeSearch() {
+    overlayEl.classList.remove("open");
+    if (debounceTimer) { clearTimeout(debounceTimer); }
+    if (abortController) { abortController.abort(); }
+  }
+
+  closeEl.addEventListener("click", closeSearch);
+
+  overlayEl.addEventListener("click", function(e) {
+    if (e.target === overlayEl) { closeSearch(); }
+  });
+
+  document.addEventListener("keydown", function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === "F") {
+      e.preventDefault();
+      if (overlayEl.classList.contains("open")) {
+        closeSearch();
+      } else {
+        openSearch();
+      }
+    }
+    if (e.key === "Escape" && overlayEl.classList.contains("open")) {
+      closeSearch();
+    }
+  });
+
+  // Expose for toolbar/menu integration
+  window.__openWorkspaceSearch = openSearch;
+
+  inputEl.addEventListener("input", function() {
+    if (debounceTimer) { clearTimeout(debounceTimer); }
+    var query = inputEl.value.trim();
+    if (!query) {
+      resultsEl.innerHTML = "";
+      if (statusEl) { statusEl.hidden = true; }
+      return;
+    }
+    debounceTimer = setTimeout(function() { runSearch(query); }, 300);
+  });
+
+  function runSearch(query) {
+    if (abortController) { abortController.abort(); }
+    abortController = new AbortController();
+    resultsEl.innerHTML = '<div class="search-no-results">Searching...</div>';
+    if (statusEl) { statusEl.hidden = true; }
+
+    fetch("/api/search?q=" + encodeURIComponent(query), { signal: abortController.signal })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.error) {
+          resultsEl.innerHTML = '<div class="search-no-results">' + escapeHtml(data.error) + '</div>';
+          return;
+        }
+        if (!data.results || data.results.length === 0) {
+          resultsEl.innerHTML = '<div class="search-no-results">No results found.</div>';
+          return;
+        }
+        renderSearchResults(data.results, query);
+        if (statusEl) {
+          var totalMatches = data.results.reduce(function(sum, r) { return sum + r.matches.length; }, 0);
+          statusEl.textContent = totalMatches + " match" + (totalMatches !== 1 ? "es" : "") + " in " + data.results.length + " file" + (data.results.length !== 1 ? "s" : "");
+          statusEl.hidden = false;
+        }
+      })
+      .catch(function(err) {
+        if (err.name !== "AbortError") {
+          resultsEl.innerHTML = '<div class="search-no-results">Search failed.</div>';
+        }
+      });
+  }
+
+  function renderSearchResults(results, query) {
+    var html = "";
+    for (var i = 0; i < results.length; i++) {
+      var file = results[i];
+      html += '<div class="search-result-group">';
+      html += '<div class="search-result-file">' + escapeHtml(file.relativePath) + ' <span class="match-count">(' + file.matches.length + ')</span></div>';
+      for (var j = 0; j < file.matches.length; j++) {
+        var match = file.matches[j];
+        html += '<div class="search-result-match" data-uri="' + escapeHtml(file.uri) + '">';
+        html += '<span class="search-result-line-num">L' + match.line + '</span>';
+        html += '<span class="search-result-text">' + highlightMatch(match.text, query) + '</span>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    resultsEl.innerHTML = html;
+  }
+
+  resultsEl.addEventListener("click", function(e) {
+    var matchEl = e.target.closest(".search-result-match");
+    if (!matchEl) { return; }
+    var uri = matchEl.getAttribute("data-uri");
+    if (uri && typeof openDocument === "function") {
+      openDocument(uri);
+      closeSearch();
+    }
+  });
+
+  function highlightMatch(text, query) {
+    var escaped = escapeHtml(text);
+    var queryEscaped = escapeHtml(query);
+    var regex = new RegExp("(" + queryEscaped.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + ")", "gi");
+    return escaped.replace(regex, "<mark>$1</mark>");
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  document.addEventListener("click", function(e) {
+    var btn = e.target.closest(".mm-plantuml-download");
+    if (btn) {
+      e.preventDefault();
+      var pngSrc = btn.dataset.src;
+      if (pngSrc) {
+        var a = document.createElement("a");
+        a.href = pngSrc;
+        a.download = "plantuml-diagram.png";
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    }
+  });
+})();
+
+// Tag Navigation
+var currentTagFilter = null;
+
+function escapeHtmlTag(text) {
+  var div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function loadTags() {
+  fetch("/api/tags")
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      renderTagCloud(data.tags || []);
+    })
+    .catch(function() {
+      // Silently fail if tags can't be loaded
+    });
+}
+
+function renderTagCloud(tags) {
+  var container = document.getElementById("tag-cloud");
+  if (!container) return;
+
+  if (tags.length === 0) {
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "block";
+  var html = '<div class="mm-tags-header"><span class="mm-tags-title">Tags</span>';
+  if (currentTagFilter) {
+    html += '<button class="mm-tags-clear" title="Clear filter">✕</button>';
+  }
+  html += '</div><div class="mm-tags-list">';
+
+  tags.forEach(function(t) {
+    var activeClass = currentTagFilter === t.tag ? " mm-tag-active" : "";
+    html += '<button class="mm-tag-chip' + activeClass + '" data-tag="' + escapeHtmlTag(t.tag) + '">' +
+            escapeHtmlTag(t.tag) + ' <span class="mm-tag-count">' + t.count + '</span></button>';
+  });
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+document.addEventListener("click", function(e) {
+  var chip = e.target.closest(".mm-tag-chip");
+  if (chip) {
+    var tag = chip.dataset.tag;
+    if (currentTagFilter === tag) {
+      currentTagFilter = null;
+    } else {
+      currentTagFilter = tag;
+    }
+    filterTreeByTag();
+    loadTags();
+    return;
+  }
+
+  var clearBtn = e.target.closest(".mm-tags-clear");
+  if (clearBtn) {
+    currentTagFilter = null;
+    filterTreeByTag();
+    loadTags();
+    return;
+  }
+});
+
+function filterTreeByTag() {
+  if (!currentTagFilter) {
+    document.querySelectorAll(".tree-file, .tree-folder").forEach(function(el) {
+      el.style.display = "";
+    });
+    return;
+  }
+
+  fetch("/api/tags")
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      var matchingTag = (data.tags || []).find(function(t) { return t.tag === currentTagFilter; });
+      var matchingPaths = new Set((matchingTag ? matchingTag.files : []).map(function(f) { return f.relativePath; }));
+
+      document.querySelectorAll(".tree-file").forEach(function(el) {
+        var itemPath = el.dataset.relativePath || el.dataset.uri || "";
+        var show = false;
+        matchingPaths.forEach(function(p) {
+          if (itemPath.indexOf(p) !== -1) show = true;
+        });
+        el.style.display = show ? "" : "none";
+      });
+
+      document.querySelectorAll(".tree-folder").forEach(function(folder) {
+        var hasVisible = folder.querySelector(".tree-file:not([style*='display: none'])");
+        folder.style.display = hasVisible ? "" : "none";
+      });
+    });
+}

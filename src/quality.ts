@@ -1,4 +1,6 @@
 import * as path from "path";
+import * as http from "http";
+import * as https from "https";
 import * as vscode from "vscode";
 
 export type FindingKind = "style" | "structure" | "link" | "accessibility";
@@ -532,4 +534,96 @@ function countSyllables(text: string): number {
   }
 
   return Math.max(total, 1);
+}
+
+export interface ExternalLinkEntry {
+  line: number;
+  url: string;
+}
+
+export function extractExternalLinks(markdown: string): ExternalLinkEntry[] {
+  const links: ExternalLinkEntry[] = [];
+  const lines = markdown.split(/\r?\n/);
+  const seen = new Set<string>();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Match [text](url) links
+    for (const match of line.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
+      const url = (match[1] || "").trim();
+      if ((url.startsWith("http://") || url.startsWith("https://")) && !seen.has(`${i}:${url}`)) {
+        seen.add(`${i}:${url}`);
+        links.push({ line: i + 1, url });
+      }
+    }
+
+    // Match bare URLs not already captured by markdown link syntax
+    for (const match of line.matchAll(/(?<!\]\(|"|')https?:\/\/[^\s)>\]"'`]+/g)) {
+      const url = match[0].replace(/[.,;:!?]+$/, "");
+      if (!seen.has(`${i}:${url}`)) {
+        seen.add(`${i}:${url}`);
+        links.push({ line: i + 1, url });
+      }
+    }
+  }
+
+  return links;
+}
+
+export interface ExternalLinkCheckResult {
+  url: string;
+  status: number | "timeout" | "error";
+  ok: boolean;
+  error?: string;
+}
+
+export async function checkExternalUrl(url: string, timeoutMs: number = 5000): Promise<ExternalLinkCheckResult> {
+  const makeRequest = (method: string, targetUrl: string, redirectsLeft: number): Promise<ExternalLinkCheckResult> => {
+    return new Promise((resolve) => {
+      const parsed = new URL(targetUrl);
+      const transport = parsed.protocol === "https:" ? https : http;
+      const req = transport.request(targetUrl, {
+        method,
+        timeout: timeoutMs,
+        headers: {
+          "User-Agent": "MarkdownMirror-LinkChecker/1.0"
+        }
+      }, (res) => {
+        res.resume();
+
+        const statusCode = res.statusCode || 0;
+
+        if ([301, 302, 303, 307, 308].includes(statusCode) && res.headers.location && redirectsLeft > 0) {
+          const redirectUrl = new URL(res.headers.location, targetUrl).toString();
+          resolve(makeRequest(method, redirectUrl, redirectsLeft - 1));
+          return;
+        }
+
+        if (method === "HEAD" && statusCode === 405) {
+          resolve(makeRequest("GET", targetUrl, redirectsLeft));
+          return;
+        }
+
+        resolve({
+          url,
+          status: statusCode,
+          ok: statusCode >= 200 && statusCode < 400
+        });
+      });
+
+      req.on("timeout", () => {
+        req.destroy();
+        resolve({ url, status: "timeout", ok: false, error: "Request timed out" });
+      });
+
+      req.on("error", (err) => {
+        resolve({ url, status: "error", ok: false, error: err.message });
+      });
+
+      req.end();
+    });
+  };
+
+  return makeRequest("HEAD", url, 5);
 }
