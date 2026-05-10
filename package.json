@@ -462,7 +462,12 @@
           "items": {
             "type": "string"
           },
-          "default": [".yaml", ".yml", ".json"],
+          "default": [
+            ".yaml",
+            ".yml",
+            ".json",
+            ".xml"
+          ],
           "description": "File extensions to treat as data files for rich preview. Only applies when enableDataFiles is true."
         },
         "markdownMirror.enableSearch": {
@@ -637,6 +642,7 @@
   },
   "dependencies": {
     "express": "^4.21.2",
+    "fast-xml-parser": "^5.7.3",
     "gray-matter": "^4.0.3",
     "highlight.js": "^11.11.1",
     "js-yaml": "^4.1.0",

@@ -1,13 +1,15 @@
 import * as path from "path";
 import * as yaml from "js-yaml";
 import hljs from "highlight.js";
+import { XMLParser } from "fast-xml-parser";
 
-export type DataFileType = "yaml" | "json" | "unknown";
+export type DataFileType = "yaml" | "json" | "xml" | "unknown";
 
 const DATA_EXTENSIONS: Record<string, DataFileType> = {
   ".yaml": "yaml",
   ".yml": "yaml",
-  ".json": "json"
+  ".json": "json",
+  ".xml": "xml"
 };
 
 export function getDataFileType(filePath: string): DataFileType {
@@ -30,7 +32,19 @@ export function renderDataFile(content: string, filePath: string): string {
   let parseError: string | undefined;
 
   try {
-    parsed = fileType === "yaml" ? yaml.load(content) : JSON.parse(content);
+    if (fileType === "yaml") {
+      parsed = yaml.load(content);
+    } else if (fileType === "xml") {
+      const parser = new XMLParser({
+        ignoreAttributes: false,
+        attributeNamePrefix: "@_",
+        textNodeName: "#text",
+        preserveOrder: false
+      });
+      parsed = parser.parse(content);
+    } else {
+      parsed = JSON.parse(content);
+    }
   } catch (err) {
     parseError = err instanceof Error ? err.message : "Failed to parse file.";
   }
@@ -42,9 +56,9 @@ export function renderDataFile(content: string, filePath: string): string {
 
   const treeHtml = parseError
     ? `<div class="data-parse-error">${escapeHtml(parseError)}</div>`
-    : renderTree(parsed);
+    : renderTree(parsed, 0, fileType === "xml");
 
-  const highlightLang = fileType === "yaml" ? "yaml" : "json";
+  const highlightLang = fileType === "yaml" ? "yaml" : fileType === "xml" ? "xml" : "json";
   let sourceHtml: string;
   if (hljs.getLanguage(highlightLang)) {
     sourceHtml = hljs.highlight(content, { language: highlightLang, ignoreIllegals: true }).value;
@@ -69,7 +83,7 @@ export function renderDataFile(content: string, filePath: string): string {
 </div>`;
 }
 
-function renderTree(value: unknown, depth: number = 0): string {
+function renderTree(value: unknown, depth: number = 0, xmlMode: boolean = false): string {
   if (value === null || value === undefined) {
     return `<span class="data-value data-null">null</span>`;
   }
@@ -91,7 +105,7 @@ function renderTree(value: unknown, depth: number = 0): string {
       return `<span class="data-value data-empty">[]</span>`;
     }
     const items = value.map((item, index) => {
-      const childHtml = renderTree(item, depth + 1);
+      const childHtml = renderTree(item, depth + 1, xmlMode);
       const isExpandable = typeof item === "object" && item !== null;
       return `<li class="data-node${isExpandable ? " data-expandable" : ""}">
         <span class="data-key data-index">${index}</span>: ${childHtml}
@@ -108,10 +122,26 @@ function renderTree(value: unknown, depth: number = 0): string {
       return `<span class="data-value data-empty">{}</span>`;
     }
     const items = entries.map(([key, val]) => {
-      const childHtml = renderTree(val, depth + 1);
+      const childHtml = renderTree(val, depth + 1, xmlMode);
       const isExpandable = typeof val === "object" && val !== null;
+      const isAttr = xmlMode && key.startsWith("@_");
+      if (isAttr) {
+        return `<li class="data-node">
+          <span class="data-xml-attr">${escapeHtml(key.slice(2))}="${escapeHtml(String(val))}"</span>
+        </li>`;
+      }
+      // Collect sibling attributes for badge display
+      let attrBadges = "";
+      if (xmlMode && typeof val === "object" && val !== null && !Array.isArray(val)) {
+        const attrKeys = Object.keys(val as Record<string, unknown>).filter(k => k.startsWith("@_"));
+        if (attrKeys.length > 0) {
+          attrBadges = attrKeys.map(k =>
+            `<span class="data-xml-attr">${escapeHtml(k.slice(2))}="${escapeHtml(String((val as Record<string, unknown>)[k]))}"</span>`
+          ).join("");
+        }
+      }
       return `<li class="data-node${isExpandable ? " data-expandable" : ""}">
-        <span class="data-key">${escapeHtml(key)}</span>: ${childHtml}
+        <span class="data-key">${escapeHtml(key)}</span>${attrBadges}: ${childHtml}
       </li>`;
     }).join("");
     return `<span class="data-bracket">{</span><span class="data-count">${entries.length}</span>

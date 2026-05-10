@@ -243,8 +243,147 @@ class NativePreviewManager {
     NativePreviewManager.currentPanel.webview.html = this.getHtmlForWebview(baseUrl, targetUri || "");
 
     NativePreviewManager.currentPanel.webview.onDidReceiveMessage(
-      async (message: { type: string; command?: string; href?: string }) => {
-        if (message.type === "run-command" && message.command) {
+      async (message: { type: string; command?: string; href?: string; action?: string }) => {
+        if (message.type === "format-markdown" && message.action) {
+          const editor = vscode.window.activeTextEditor;
+          if (!editor || !editor.document.fileName.endsWith(".md")) {
+            void vscode.window.showInformationMessage("Open a Markdown file in the editor to use formatting.");
+            return;
+          }
+          const sel = editor.selection;
+          const selectedText = editor.document.getText(sel);
+
+          switch (message.action) {
+            case "bold": {
+              if (selectedText) {
+                await editor.edit(eb => eb.replace(sel, `**${selectedText}**`));
+              } else {
+                const pos = sel.active;
+                await editor.edit(eb => eb.insert(pos, "**text**"));
+                const start = new vscode.Position(pos.line, pos.character + 2);
+                const end = new vscode.Position(pos.line, pos.character + 6);
+                editor.selection = new vscode.Selection(start, end);
+              }
+              break;
+            }
+            case "italic": {
+              if (selectedText) {
+                await editor.edit(eb => eb.replace(sel, `_${selectedText}_`));
+              } else {
+                const pos = sel.active;
+                await editor.edit(eb => eb.insert(pos, "_text_"));
+                const start = new vscode.Position(pos.line, pos.character + 1);
+                const end = new vscode.Position(pos.line, pos.character + 5);
+                editor.selection = new vscode.Selection(start, end);
+              }
+              break;
+            }
+            case "heading": {
+              const line = editor.document.lineAt(sel.active.line);
+              const lineText = line.text;
+              const lineRange = line.range;
+              let newText: string;
+              if (lineText.startsWith("### ")) {
+                newText = lineText.slice(4);
+              } else if (lineText.startsWith("## ")) {
+                newText = "### " + lineText.slice(3);
+              } else if (lineText.startsWith("# ")) {
+                newText = "## " + lineText.slice(2);
+              } else {
+                newText = "# " + lineText;
+              }
+              await editor.edit(eb => eb.replace(lineRange, newText));
+              break;
+            }
+            case "link": {
+              if (selectedText) {
+                const startPos = sel.start;
+                await editor.edit(eb => eb.replace(sel, `[${selectedText}](url)`));
+                const urlStart = new vscode.Position(startPos.line, startPos.character + selectedText.length + 3);
+                const urlEnd = new vscode.Position(startPos.line, startPos.character + selectedText.length + 6);
+                editor.selection = new vscode.Selection(urlStart, urlEnd);
+              } else {
+                const pos = sel.active;
+                await editor.edit(eb => eb.insert(pos, "[text](url)"));
+                const urlStart = new vscode.Position(pos.line, pos.character + 7);
+                const urlEnd = new vscode.Position(pos.line, pos.character + 10);
+                editor.selection = new vscode.Selection(urlStart, urlEnd);
+              }
+              break;
+            }
+            case "code": {
+              if (selectedText && selectedText.includes("\n")) {
+                await editor.edit(eb => eb.replace(sel, "```\n" + selectedText + "\n```"));
+              } else if (selectedText) {
+                await editor.edit(eb => eb.replace(sel, "`" + selectedText + "`"));
+              } else {
+                const pos = sel.active;
+                await editor.edit(eb => eb.insert(pos, "`code`"));
+                const start = new vscode.Position(pos.line, pos.character + 1);
+                const end = new vscode.Position(pos.line, pos.character + 5);
+                editor.selection = new vscode.Selection(start, end);
+              }
+              break;
+            }
+            case "bulletList": {
+              const startLine = sel.start.line;
+              const endLine = sel.end.line;
+              await editor.edit(eb => {
+                for (let i = startLine; i <= endLine; i++) {
+                  const line = editor.document.lineAt(i);
+                  if (line.text.startsWith("- ")) {
+                    eb.replace(line.range, line.text.slice(2));
+                  } else {
+                    eb.replace(line.range, "- " + line.text);
+                  }
+                }
+              });
+              break;
+            }
+            case "numberedList": {
+              const startLine = sel.start.line;
+              const endLine = sel.end.line;
+              await editor.edit(eb => {
+                for (let i = startLine; i <= endLine; i++) {
+                  const line = editor.document.lineAt(i);
+                  const numMatch = line.text.match(/^\d+\.\s/);
+                  if (numMatch) {
+                    eb.replace(line.range, line.text.slice(numMatch[0].length));
+                  } else {
+                    eb.replace(line.range, `${i - startLine + 1}. ${line.text}`);
+                  }
+                }
+              });
+              break;
+            }
+            case "blockquote": {
+              const startLine = sel.start.line;
+              const endLine = sel.end.line;
+              await editor.edit(eb => {
+                for (let i = startLine; i <= endLine; i++) {
+                  const line = editor.document.lineAt(i);
+                  if (line.text.startsWith("> ")) {
+                    eb.replace(line.range, line.text.slice(2));
+                  } else {
+                    eb.replace(line.range, "> " + line.text);
+                  }
+                }
+              });
+              break;
+            }
+            case "table": {
+              const pos = sel.active;
+              const table = "\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n| Cell | Cell | Cell |\n| Cell | Cell | Cell |\n| Cell | Cell | Cell |\n";
+              await editor.edit(eb => eb.insert(pos, table));
+              break;
+            }
+            case "horizontalRule": {
+              const pos = sel.active;
+              await editor.edit(eb => eb.insert(pos, "\n---\n"));
+              break;
+            }
+          }
+        } else if (message.type === "run-command" && message.command) {
           if (message.command === "markdownMirror.openSettings") {
             await vscode.commands.executeCommand("workbench.action.openSettings", "markdownMirror");
           } else if (message.command === "markdownMirror.openInBrowser") {
@@ -390,10 +529,29 @@ class NativePreviewManager {
         background: var(--vscode-button-secondaryHoverBackground, #d0d0d0);
       }
       .mm-toolbar .mm-sep { width: 1px; background: var(--vscode-panel-border, #ccc); margin: 2px 4px; }
+      /* Formatting buttons */
+      .mm-toolbar button.mm-fmt {
+        padding: 3px 7px; font-size: 10px; min-width: 22px; justify-content: center;
+      }
+      .mm-toolbar button.mm-fmt-text {
+        font-family: var(--vscode-editor-font-family, monospace);
+        font-weight: 700;
+      }
     </style>
   </head>
   <body class="vscode-body">
     <div class="mm-toolbar" id="mm-toolbar">
+      <button class="mm-fmt mm-fmt-text" data-format="bold" title="Bold">B</button>
+      <button class="mm-fmt mm-fmt-text" data-format="italic" title="Italic" style="font-style:italic;">I</button>
+      <button class="mm-fmt mm-fmt-text" data-format="heading" title="Heading">H</button>
+      <button class="mm-fmt" data-format="link" title="Link">&#128279;</button>
+      <button class="mm-fmt mm-fmt-text" data-format="code" title="Code">&lt;/&gt;</button>
+      <button class="mm-fmt" data-format="bulletList" title="Bullet List">&#8226;</button>
+      <button class="mm-fmt" data-format="numberedList" title="Numbered List">1.</button>
+      <button class="mm-fmt" data-format="blockquote" title="Blockquote">&#10077;</button>
+      <button class="mm-fmt" data-format="table" title="Table">&#8862;</button>
+      <button class="mm-fmt" data-format="horizontalRule" title="Horizontal Rule">&mdash;</button>
+      <div class="mm-sep"></div>
       <button data-cmd="exportHtml" title="Export HTML">&#128196; Export HTML</button>
       <button data-cmd="exportToWord" title="Export Word">&#128220; Export Word</button>
       <button data-cmd="printPreview" title="Print / PDF">&#128424; Print</button>
@@ -420,6 +578,11 @@ class NativePreviewManager {
 
       // Toolbar button clicks → send command to extension host
       document.getElementById('mm-toolbar').addEventListener('click', function(e) {
+        const fmtBtn = e.target.closest('[data-format]');
+        if (fmtBtn) {
+          vscodeApi.postMessage({ type: 'format-markdown', action: fmtBtn.dataset.format });
+          return;
+        }
         const btn = e.target.closest('[data-cmd]');
         if (!btn) return;
         vscodeApi.postMessage({ type: 'run-command', command: 'markdownMirror.' + btn.dataset.cmd });

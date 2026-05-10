@@ -5,7 +5,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { MarkdownRenderer } from "./renderer";
 import { isDataFile, renderDataFile } from "./dataRenderer";
 
-const SUPPORTED_LANGUAGE_IDS = new Set(["markdown", "yaml", "json", "jsonc"]);
+const SUPPORTED_LANGUAGE_IDS = new Set(["markdown", "yaml", "json", "jsonc", "xml"]);
 
 interface WatcherMessage {
   type: "connected" | "document-updated" | "document-deleted" | "viewport-updated" | "settings-updated";
@@ -33,7 +33,7 @@ export class MarkdownWatcher implements vscode.Disposable {
     private readonly assetBaseUrl: string
   ) {
     this.wsServer = new WebSocketServer({ server: this.httpServer, path: "/ws" });
-    this.fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{md,yaml,yml,json}");
+    this.fileWatcher = vscode.workspace.createFileSystemWatcher("**/*.{md,yaml,yml,json,xml}");
 
     this.wsServer.on("connection", (socket) => {
       this.send(socket, {
