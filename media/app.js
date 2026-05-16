@@ -155,6 +155,11 @@ const liveUpdatingEl = document.getElementById("live-updating");
 const backToTopEl = document.getElementById("back-to-top");
 const mobileMenuToggleEl = document.getElementById("mobile-menu-toggle");
 const mobileSidebarBackdropEl = document.getElementById("mobile-sidebar-backdrop");
+const fileNavPrevEl = document.getElementById("file-nav-prev");
+const fileNavNextEl = document.getElementById("file-nav-next");
+const fileNavPrevLabelEl = document.getElementById("file-nav-prev-label");
+const fileNavNextLabelEl = document.getElementById("file-nav-next-label");
+const fileNavPositionEl = document.getElementById("file-nav-position");
 const lightboxEl = document.getElementById("lightbox");
 const lightboxImageEl = document.getElementById("lightbox-image");
 const lightboxCloseEl = document.getElementById("lightbox-close");
@@ -1072,6 +1077,18 @@ function setupBackToTop() {
     }
   });
 
+  // File navigation buttons
+  if (fileNavPrevEl) {
+    fileNavPrevEl.addEventListener("click", function () {
+      openSiblingFile(-1);
+    });
+  }
+  if (fileNavNextEl) {
+    fileNavNextEl.addEventListener("click", function () {
+      openSiblingFile(1);
+    });
+  }
+
   paneContentElements.primary.addEventListener("scroll", handleActivePaneScrollUi);
   paneContentElements.secondary.addEventListener("scroll", handleActivePaneScrollUi);
   paneContentElements.primary.addEventListener("click", createPaneReadHandler("primary"));
@@ -1568,10 +1585,48 @@ function openSiblingFile(direction) {
     currentIndex = 0;
   }
 
-  var nextIndex = clamp(currentIndex + direction, 0, files.length - 1);
+  // Wrap around: loop from last → first and first → last
+  var nextIndex = (currentIndex + direction + files.length) % files.length;
   files[nextIndex].click();
   applyTreeKeyboardFocus(files[nextIndex]);
   state.treeKeyboardIndex = nextIndex;
+}
+
+function updateFileNav() {
+  var files = getVisibleTreeFileButtons();
+  if (files.length === 0) {
+    if (fileNavPrevEl) fileNavPrevEl.disabled = true;
+    if (fileNavNextEl) fileNavNextEl.disabled = true;
+    if (fileNavPositionEl) fileNavPositionEl.textContent = "";
+    return;
+  }
+
+  var targetPane = state.compareMode ? state.activePane : "primary";
+  var currentUri = state.selectedUriByPane[targetPane] || state.selectedUriByPane.primary;
+  var currentIndex = -1;
+  for (var i = 0; i < files.length; i++) {
+    if (files[i].dataset.uri === currentUri) {
+      currentIndex = i;
+      break;
+    }
+  }
+
+  if (fileNavPrevEl) fileNavPrevEl.disabled = files.length <= 1;
+  if (fileNavNextEl) fileNavNextEl.disabled = files.length <= 1;
+
+  if (currentIndex >= 0 && fileNavPositionEl) {
+    fileNavPositionEl.textContent = (currentIndex + 1) + " / " + files.length;
+  }
+
+  // Show previous/next file names
+  if (currentIndex >= 0) {
+    var prevIndex = (currentIndex - 1 + files.length) % files.length;
+    var nextIndex = (currentIndex + 1) % files.length;
+    var prevName = (files[prevIndex].dataset.name || files[prevIndex].textContent || "").trim();
+    var nextName = (files[nextIndex].dataset.name || files[nextIndex].textContent || "").trim();
+    if (fileNavPrevLabelEl) fileNavPrevLabelEl.textContent = prevName;
+    if (fileNavNextLabelEl) fileNavNextLabelEl.textContent = nextName;
+  }
 }
 
 function setupWidthModeToggle() {
@@ -1797,6 +1852,7 @@ function renderTree() {
   }
 
   renderFavorites();
+  updateFileNav();
 }
 
 function appendNodes(container, nodes, parentPath, query) {
@@ -2144,6 +2200,7 @@ async function openDocument(uri, relativePath, pane) {
   refreshSelection();
   updateBreadcrumb();
   updateDocumentStats();
+  updateFileNav();
 
   if (targetPane === state.activePane) {
     rebuildTocForActivePane();

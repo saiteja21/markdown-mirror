@@ -288,8 +288,15 @@ class NativePreviewManager {
   private static focusModeEnabled = false;
   public static onTargetChanged: ((uri: vscode.Uri | undefined) => void) | undefined;
 
+  public static isSupportedPreviewFile(uri: vscode.Uri): boolean {
+    if (uri.scheme !== "file") {
+      return false;
+    }
+    return uri.fsPath.toLowerCase().endsWith(".md") || isDataFile(uri.fsPath);
+  }
+
   private static resolvePreviewTarget(uri?: vscode.Uri): string | undefined {
-    if (uri && uri.scheme === "file" && uri.fsPath.toLowerCase().endsWith(".md")) {
+    if (uri && this.isSupportedPreviewFile(uri)) {
       return uri.toString();
     }
 
@@ -299,11 +306,7 @@ class NativePreviewManager {
     }
 
     const activeUri = activeEditor.document.uri;
-    if (activeUri.scheme !== "file") {
-      return undefined;
-    }
-
-    if (activeEditor.document.languageId !== "markdown" && !activeUri.fsPath.toLowerCase().endsWith(".md")) {
+    if (!this.isSupportedPreviewFile(activeUri)) {
       return undefined;
     }
 
@@ -682,7 +685,7 @@ class NativePreviewManager {
           if (targetUri) {
             fetchDocument();
           } else {
-            contentEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--vscode-descriptionForeground)">No Markdown file currently active.<br><br>Open a <code>.md</code> file in the editor to see the preview.</div>';
+            contentEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--vscode-descriptionForeground)">No supported file currently active.<br><br>Open a <code>.md</code>, <code>.yaml</code>, <code>.json</code>, or <code>.xml</code> file in the editor to see the preview.</div>';
           }
         });
 
@@ -1232,8 +1235,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("markdownMirror.openActiveInPreview", async () => {
       const activeUri = vscode.window.activeTextEditor?.document.uri;
-      if (!activeUri || activeUri.scheme !== "file" || !activeUri.fsPath.toLowerCase().endsWith(".md")) {
-        void vscode.window.showInformationMessage("Open a markdown file in the editor, then run Markdown Mirror: Preview Active File.");
+      if (!activeUri || !NativePreviewManager.isSupportedPreviewFile(activeUri)) {
+        void vscode.window.showInformationMessage("Open a markdown or data file (.md, .yaml, .json, .xml) in the editor, then run Markdown Mirror: Preview Active File.");
         return;
       }
 

@@ -1162,6 +1162,60 @@ body.right-panel-collapsed #right-resizer {
   opacity: 1;
 }
 
+/* ===== FILE NAVIGATION BAR ===== */
+.file-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.file-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 32px;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.file-nav-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: var(--text-primary);
+}
+
+.file-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.file-nav-position {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.file-nav-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stats-bar {
   flex-shrink: 0;
   padding: 9px 14px;
@@ -1860,6 +1914,23 @@ body.theme-dark .stats-bar {
   color: #dbe6f5;
 }
 
+body.theme-dark .file-nav {
+  border-color: #243447;
+  background: #0b1528;
+}
+
+body.theme-dark .file-nav-btn {
+  border-color: #30363d;
+  background: #161b22;
+  color: #c9d1d9;
+}
+
+body.theme-dark .file-nav-btn:hover {
+  background: #1c2128;
+  border-color: #484f58;
+  color: #e6edf3;
+}
+
 body.theme-dark .tabs-bar {
   border-color: #243447;
   background: #0b1528;
@@ -2377,6 +2448,22 @@ body.theme-dark .word-export-item:hover {
     font-size: 12px;
   }
 
+  /* --- File navigation compact --- */
+  .file-nav {
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .file-nav-btn {
+    padding: 6px 10px;
+    min-height: 36px;
+    font-size: 12px;
+  }
+
+  .file-nav-label {
+    max-width: 100px;
+  }
+
   /* --- Touch-friendly sidebar items --- */
   .tree-file {
     padding: 8px 10px 8px 14px;
@@ -2490,6 +2577,7 @@ body.theme-dark .word-export-item:hover {
   .pane-meta,
   .panel-reopen-btn,
   .stats-bar,
+  .file-nav,
   .mermaid-actions,
   .shortcuts-modal {
     display: none !important;
