@@ -388,7 +388,14 @@ class NativePreviewManager {
         if (message.type === "format-markdown" && message.action) {
           await applyMarkdownFormatting(message.action);
         } else if (message.type === "run-command" && message.command) {
-          if (message.command === "markdownMirror.openSettings") {
+          if (message.command === "markdownMirror.editFile") {
+            const editTarget = NativePreviewManager.getCurrentTargetUri();
+            if (editTarget) {
+              await vscode.window.showTextDocument(editTarget, { viewColumn: vscode.ViewColumn.One, preview: false });
+            } else {
+              void vscode.window.showInformationMessage("No markdown file is currently being previewed.");
+            }
+          } else if (message.command === "markdownMirror.openSettings") {
             await vscode.commands.executeCommand("workbench.action.openSettings", "markdownMirror");
           } else if (message.command === "markdownMirror.openInBrowser") {
             const currentBaseUrl = runtime.currentBaseUrl ?? await runtime.start();
@@ -532,11 +539,21 @@ class NativePreviewManager {
       .mm-toolbar button:hover {
         background: var(--vscode-button-secondaryHoverBackground, #d0d0d0);
       }
+      .mm-toolbar button[data-cmd="editFile"] {
+        background: var(--vscode-button-background, #007acc);
+        color: var(--vscode-button-foreground, #fff);
+        border-color: var(--vscode-button-background, #007acc);
+      }
+      .mm-toolbar button[data-cmd="editFile"]:hover {
+        background: var(--vscode-button-hoverBackground, #005fa3);
+      }
       .mm-toolbar .mm-sep { width: 1px; background: var(--vscode-panel-border, #ccc); margin: 2px 4px; }
     </style>
   </head>
   <body class="vscode-body">
     <div class="mm-toolbar" id="mm-toolbar">
+      <button data-cmd="editFile" title="Edit source file (Ctrl+E)">&#9998; Edit</button>
+      <div class="mm-sep"></div>
       <button data-cmd="exportHtml" title="Export HTML">&#128196; Export HTML</button>
       <button data-cmd="exportToWord" title="Export Word">&#128220; Export Word</button>
       <button data-cmd="printPreview" title="Print / PDF">&#128424; Print</button>
@@ -571,6 +588,14 @@ class NativePreviewManager {
         const btn = e.target.closest('[data-cmd]');
         if (!btn) return;
         vscodeApi.postMessage({ type: 'run-command', command: 'markdownMirror.' + btn.dataset.cmd });
+      });
+
+      // Ctrl+E shortcut to edit source file
+      document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+          e.preventDefault();
+          vscodeApi.postMessage({ type: 'run-command', command: 'markdownMirror.editFile' });
+        }
       });
 
       // Unified click handler for links and image zoom

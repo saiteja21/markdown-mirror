@@ -153,6 +153,8 @@ const favoritesTreeEl = document.getElementById("favorites-tree");
 const fileCountEl = document.getElementById("file-count");
 const liveUpdatingEl = document.getElementById("live-updating");
 const backToTopEl = document.getElementById("back-to-top");
+const mobileMenuToggleEl = document.getElementById("mobile-menu-toggle");
+const mobileSidebarBackdropEl = document.getElementById("mobile-sidebar-backdrop");
 const lightboxEl = document.getElementById("lightbox");
 const lightboxImageEl = document.getElementById("lightbox-image");
 const lightboxCloseEl = document.getElementById("lightbox-close");
@@ -587,6 +589,15 @@ function handleResizerKeydown(event, panel) {
 
 function applyResponsiveCollapse() {
   var isNarrow = window.innerWidth <= constants.narrowBreakpoint;
+  var isMobile = window.innerWidth <= 768;
+
+  // Toggle mobile class on body
+  document.body.classList.toggle("is-mobile", isMobile);
+
+  if (isMobile) {
+    // On mobile, always close sidebar overlay when resizing into mobile range
+    closeMobileSidebar();
+  }
 
   if (isNarrow && !state.responsiveForcedCollapse) {
     state.responsiveForcedCollapse = true;
@@ -599,6 +610,35 @@ function applyResponsiveCollapse() {
     state.responsiveForcedCollapse = false;
     applyPanelStateFromPrefs();
   }
+}
+
+function openMobileSidebar() {
+  document.body.classList.add("mobile-sidebar-open");
+  if (mobileSidebarBackdropEl) {
+    mobileSidebarBackdropEl.removeAttribute("hidden");
+  }
+}
+
+function closeMobileSidebar() {
+  document.body.classList.remove("mobile-sidebar-open");
+  if (mobileSidebarBackdropEl) {
+    mobileSidebarBackdropEl.setAttribute("hidden", "");
+  }
+}
+
+// Mobile menu toggle
+if (mobileMenuToggleEl) {
+  mobileMenuToggleEl.addEventListener("click", function () {
+    if (document.body.classList.contains("mobile-sidebar-open")) {
+      closeMobileSidebar();
+    } else {
+      openMobileSidebar();
+    }
+  });
+}
+
+if (mobileSidebarBackdropEl) {
+  mobileSidebarBackdropEl.addEventListener("click", closeMobileSidebar);
 }
 
 function setupPaneActivation() {
@@ -2050,6 +2090,11 @@ function folderHasMatch(folder, query) {
 async function openDocument(uri, relativePath, pane) {
   if (!uri) {
     return;
+  }
+
+  // Close mobile sidebar when a file is selected
+  if (document.body.classList.contains("is-mobile")) {
+    closeMobileSidebar();
   }
 
   var startedAt = performance.now();
