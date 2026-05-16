@@ -909,7 +909,7 @@ export function activate(context: vscode.ExtensionContext): void {
   syncTocTarget(NativePreviewManager.getCurrentTargetUri());
   NativePreviewManager.onTargetChanged = syncTocTarget;
 
-  const treeWatcher = vscode.workspace.createFileSystemWatcher("**/*.md");
+  const treeWatcher = vscode.workspace.createFileSystemWatcher("**/*.{md,yaml,yml,json,jsonc,xml}");
   treeWatcher.onDidCreate(() => { treeProvider.refresh(); invalidatePathSetCache(); });
   treeWatcher.onDidDelete(() => { treeProvider.refresh(); invalidatePathSetCache(); });
   treeWatcher.onDidChange((uri) => {
@@ -1889,9 +1889,13 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor && editor.document.uri.scheme === "file" && (editor.document.languageId === "markdown" || editor.document.uri.fsPath.toLowerCase().endsWith(".md"))) {
-        NativePreviewManager.updateTarget(editor.document.uri.toString());
-        scheduleDiagnostics(editor.document.uri);
+      if (editor && editor.document.uri.scheme === "file") {
+        if (NativePreviewManager.isSupportedPreviewFile(editor.document.uri)) {
+          NativePreviewManager.updateTarget(editor.document.uri.toString());
+        }
+        if (editor.document.languageId === "markdown" || editor.document.uri.fsPath.toLowerCase().endsWith(".md")) {
+          scheduleDiagnostics(editor.document.uri);
+        }
       }
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {

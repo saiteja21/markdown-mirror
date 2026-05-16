@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { isDataFile } from "./dataRenderer";
 
 type TreeNodeKind = "folder" | "file";
 
@@ -89,18 +90,35 @@ export class MarkdownTreeProvider implements vscode.TreeDataProvider<MarkdownTre
     this.root.children.clear();
 
     const excludePatterns = this.getExcludePatterns();
-    const files = await vscode.workspace.findFiles("**/*.md", "**/{node_modules,.git}/**");
-    for (const file of files) {
+    const dataFilesEnabled = vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enableDataFiles", true);
+
+    const mdFiles = await vscode.workspace.findFiles("**/*.md", "**/{node_modules,.git}/**");
+    for (const file of mdFiles) {
       const relative = this.toWorkspaceRelative(file);
       if (!relative) {
         continue;
       }
-
       if (excludePatterns.length > 0 && this.isExcluded(relative, excludePatterns)) {
         continue;
       }
-
       this.insertFile(relative, file);
+    }
+
+    if (dataFilesEnabled) {
+      const dataFiles = await vscode.workspace.findFiles("**/*.{yaml,yml,json,jsonc,xml}", "**/{node_modules,.git}/**");
+      for (const file of dataFiles) {
+        if (!isDataFile(file.fsPath)) {
+          continue;
+        }
+        const relative = this.toWorkspaceRelative(file);
+        if (!relative) {
+          continue;
+        }
+        if (excludePatterns.length > 0 && this.isExcluded(relative, excludePatterns)) {
+          continue;
+        }
+        this.insertFile(relative, file);
+      }
     }
   }
 
