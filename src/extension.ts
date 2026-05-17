@@ -292,7 +292,11 @@ class NativePreviewManager {
     if (uri.scheme !== "file") {
       return false;
     }
-    return uri.fsPath.toLowerCase().endsWith(".md") || isDataFile(uri.fsPath);
+    if (uri.fsPath.toLowerCase().endsWith(".md")) {
+      return true;
+    }
+    const dataFilesEnabled = vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enableDataFiles", true);
+    return dataFilesEnabled && isDataFile(uri.fsPath);
   }
 
   private static resolvePreviewTarget(uri?: vscode.Uri): string | undefined {

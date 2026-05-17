@@ -1622,8 +1622,8 @@ function updateFileNav() {
   if (currentIndex >= 0) {
     var prevIndex = (currentIndex - 1 + files.length) % files.length;
     var nextIndex = (currentIndex + 1) % files.length;
-    var prevName = (files[prevIndex].dataset.name || files[prevIndex].textContent || "").trim();
-    var nextName = (files[nextIndex].dataset.name || files[nextIndex].textContent || "").trim();
+    var prevName = (files[prevIndex].dataset.name || "").trim();
+    var nextName = (files[nextIndex].dataset.name || "").trim();
     if (fileNavPrevLabelEl) fileNavPrevLabelEl.textContent = prevName;
     if (fileNavNextLabelEl) fileNavNextLabelEl.textContent = nextName;
   }
@@ -1941,6 +1941,7 @@ function appendNodes(container, nodes, parentPath, query) {
       "<span>" + escapeHtml(node.name) + "</span>" +
       '<span class="tree-file-pin" role="button" tabindex="0" title="Pin file" aria-label="Pin file">★</span>';
     button.dataset.uri = node.uri;
+    button.dataset.name = node.name;
     button.dataset.relativePath = node.relativePath;
     button.addEventListener("click", createOpenHandler(node.uri, node.relativePath));
 
@@ -2059,6 +2060,7 @@ function renderFavorites() {
     }
     button.type = "button";
     button.dataset.uri = uri;
+    button.dataset.name = node.name || node.relativePath || "Pinned";
     button.innerHTML =
       '<span>' + escapeHtml(node.name || node.relativePath || "Pinned") + '</span>' +
       '<span class="tree-file-pin" role="button" tabindex="0" title="Unfavorite" aria-label="Unfavorite">★</span>';
