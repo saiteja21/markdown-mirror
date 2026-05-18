@@ -557,7 +557,7 @@
           { "filenamePattern": "*.jsonc" },
           { "filenamePattern": "*.xml" }
         ],
-        "priority": "option"
+        "priority": "default"
       }
     ],
     "viewsContainers": {
