@@ -1,4 +1,5 @@
 import * as fs from "fs/promises";
+import * as os from "os";
 import * as vscode from "vscode";
 import * as path from "path";
 import * as cp from "child_process";
@@ -353,7 +354,7 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
               const rendered = await this.runtime.renderDocumentHtmlForExport(panelUri);
               const printHtml = buildStandaloneHtml(rendered.title, rendered.html, "print");
               // Write to OS temp directory (file:// scheme) so openExternal works
-              const tmpDir = require("os").tmpdir();
+              const tmpDir = os.tmpdir();
               const tmpPath = path.join(tmpDir, "markdown-mirror-print.html");
               await fs.writeFile(tmpPath, printHtml, "utf-8");
               await vscode.env.openExternal(vscode.Uri.file(tmpPath));
@@ -1717,8 +1718,8 @@ export function activate(context: vscode.ExtensionContext): void {
       await vscode.workspace.fs.writeFile(saveUri, new TextEncoder().encode(fullHtml));
       void vscode.window.showInformationMessage(`Exported ${profileChoice.label} HTML to ${saveUri.fsPath}`);
     }),
-    vscode.commands.registerCommand("markdownMirror.exportToWord", async () => {
-      const targetUri = resolveTargetMarkdownUri();
+    vscode.commands.registerCommand("markdownMirror.exportToWord", async (passedUri?: vscode.Uri) => {
+      const targetUri = passedUri ?? resolveTargetMarkdownUri();
       if (!targetUri) {
         void vscode.window.showInformationMessage("Open a markdown file in preview or editor first.");
         return;
