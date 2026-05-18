@@ -1877,6 +1877,73 @@ export function activate(context: vscode.ExtensionContext): void {
         );
       }
     }),
+    vscode.commands.registerCommand("markdownMirror.excludePath", async (uri?: vscode.Uri) => {
+      const targetUri = uri || vscode.window.activeTextEditor?.document.uri;
+      if (!targetUri) {
+        void vscode.window.showInformationMessage("Right-click a file or folder in the Explorer to exclude it.");
+        return;
+      }
+
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(targetUri);
+      if (!workspaceFolder) {
+        void vscode.window.showWarningMessage("File is not in an open workspace folder.");
+        return;
+      }
+
+      const relativePath = path.relative(workspaceFolder.uri.fsPath, targetUri.fsPath).replace(/\\/g, "/");
+      if (!relativePath || relativePath.startsWith("..")) {
+        void vscode.window.showWarningMessage("Cannot resolve a relative path for this item.");
+        return;
+      }
+
+      const config = vscode.workspace.getConfiguration("markdownMirror", workspaceFolder.uri);
+      const current = config.get<string[]>("excludePaths", []);
+      const normalized = current.map((p) => p.replace(/\\/g, "/").toLowerCase());
+
+      if (normalized.includes(relativePath.toLowerCase())) {
+        void vscode.window.showInformationMessage(`"${relativePath}" is already excluded.`);
+        return;
+      }
+
+      const updated = [...current, relativePath];
+      await config.update("excludePaths", updated, vscode.ConfigurationTarget.WorkspaceFolder);
+      treeProvider.refresh();
+      void vscode.window.showInformationMessage(`Excluded "${relativePath}" from Markdown Mirror.`);
+    }),
+    vscode.commands.registerCommand("markdownMirror.includePath", async (uri?: vscode.Uri) => {
+      const targetUri = uri || vscode.window.activeTextEditor?.document.uri;
+      if (!targetUri) {
+        void vscode.window.showInformationMessage("Right-click a file or folder in the Explorer to include it.");
+        return;
+      }
+
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(targetUri);
+      if (!workspaceFolder) {
+        void vscode.window.showWarningMessage("File is not in an open workspace folder.");
+        return;
+      }
+
+      const relativePath = path.relative(workspaceFolder.uri.fsPath, targetUri.fsPath).replace(/\\/g, "/");
+      if (!relativePath || relativePath.startsWith("..")) {
+        void vscode.window.showWarningMessage("Cannot resolve a relative path for this item.");
+        return;
+      }
+
+      const config = vscode.workspace.getConfiguration("markdownMirror", workspaceFolder.uri);
+      const current = config.get<string[]>("excludePaths", []);
+      const lowerTarget = relativePath.toLowerCase();
+
+      const updated = current.filter((p) => p.replace(/\\/g, "/").toLowerCase() !== lowerTarget);
+
+      if (updated.length === current.length) {
+        void vscode.window.showInformationMessage(`"${relativePath}" is not in the exclude list.`);
+        return;
+      }
+
+      await config.update("excludePaths", updated, vscode.ConfigurationTarget.WorkspaceFolder);
+      treeProvider.refresh();
+      void vscode.window.showInformationMessage(`Included "${relativePath}" back in Markdown Mirror.`);
+    }),
     vscode.workspace.onDidOpenTextDocument((document) => {
       if (document.languageId === "markdown" || document.uri.fsPath.toLowerCase().endsWith(".md")) {
         scheduleDiagnostics(document.uri);

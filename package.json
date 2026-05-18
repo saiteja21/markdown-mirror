@@ -237,6 +237,14 @@
         "command": "markdownMirror.formatHorizontalRule",
         "title": "Markdown Mirror: Horizontal Rule",
         "icon": "$(horizontal-rule)"
+      },
+      {
+        "command": "markdownMirror.excludePath",
+        "title": "Markdown Mirror: Exclude from Preview"
+      },
+      {
+        "command": "markdownMirror.includePath",
+        "title": "Markdown Mirror: Include in Preview"
       }
     ],
     "configuration": {
@@ -657,6 +665,14 @@
           "command": "markdownMirror.start",
           "when": "resourceExtname == .md",
           "group": "navigation@100"
+        },
+        {
+          "command": "markdownMirror.excludePath",
+          "group": "7_modification@1"
+        },
+        {
+          "command": "markdownMirror.includePath",
+          "group": "7_modification@2"
         }
       ],
       "editor/context": [
