@@ -67,13 +67,7 @@ export function renderDataFile(content: string, filePath: string): string {
     highlightedSource = escapeHtml(content);
   }
 
-  const sourceLines = highlightedSource.split("\n");
-  const sourceTableRows = sourceLines.map((line, i) =>
-    `<tr><td class="data-line-num">${i + 1}</td><td class="data-line-code">${line}</td></tr>`
-  ).join("");
-  const sourceHtml = `<div class="data-source-lines"><table class="data-source-table">${sourceTableRows}</table></div>`;
-
-  const rawContentAttr = escapeHtml(content);
+  const sourceHtml = `<pre class="data-source-code"><code class="hljs language-${highlightLang}">${highlightedSource}</code></pre>`;
 
   return `
 <div class="data-file-viewer" data-file-type="${fileType}">
@@ -81,45 +75,37 @@ export function renderDataFile(content: string, filePath: string): string {
     <span class="data-file-name">${escapeHtml(fileName)}</span>
     <span class="data-file-badge">${fileType.toUpperCase()}</span>
     <div class="data-view-toggle">
-      <button class="data-view-btn active" data-view="tree" title="Tree View">🌳 Tree</button>
-      <button class="data-view-btn" data-view="source" title="Source View">&lt;/&gt; Source</button>
-      <button class="data-copy-all-btn" title="Copy raw content">📋 Copy</button>
+      <button class="data-view-btn active" data-view="tree" title="Tree View">Tree</button>
+      <button class="data-view-btn" data-view="source" title="Source View">Source</button>
     </div>
   </div>
-  <textarea class="data-raw-content" style="display:none">${rawContentAttr}</textarea>
   <div class="data-view-panel data-tree-panel active">${treeHtml}</div>
   <div class="data-view-panel data-source-panel">${sourceHtml}</div>
 </div>`;
 }
 
-function typeBadge(type: string): string {
-  return `<span class="data-type-badge data-type-${type.toLowerCase()}">${type}</span>`;
-}
-
-function copyBtn(value: string): string {
-  return `<button class="data-copy-btn" data-copy-value="${escapeHtml(value)}" title="Copy value">📋</button>`;
-}
-
 function renderTree(value: unknown, depth: number = 0, xmlMode: boolean = false): string {
   if (value === null || value === undefined) {
-    return `<span class="data-value data-null">null</span>${typeBadge("NULL")}${copyBtn("null")}`;
+    return `<span class="data-value data-null">null</span>`;
   }
 
   if (typeof value === "boolean") {
-    return `<span class="data-value data-boolean">${value}</span>${typeBadge("BOOL")}${copyBtn(String(value))}`;
+    return `<span class="data-value data-boolean">${value}</span>`;
   }
 
   if (typeof value === "number") {
-    return `<span class="data-value data-number">${value}</span>${typeBadge("NUM")}${copyBtn(String(value))}`;
+    return `<span class="data-value data-number">${value}</span>`;
   }
 
   if (typeof value === "string") {
-    return `<span class="data-value data-string">"${escapeHtml(value)}"</span>${typeBadge("STR")}${copyBtn(value)}`;
+    // Long strings get truncated in tree view with a tooltip
+    const display = value.length > 120 ? escapeHtml(value.slice(0, 120)) + "…" : escapeHtml(value);
+    return `<span class="data-value data-string">"${display}"</span>`;
   }
 
   if (Array.isArray(value)) {
     if (value.length === 0) {
-      return `<span class="data-value data-empty">[ ]</span>${typeBadge("ARR")}`;
+      return `<span class="data-value data-empty">[ ]</span>`;
     }
     const items = value.map((item, index) => {
       const childHtml = renderTree(item, depth + 1, xmlMode);
@@ -128,38 +114,31 @@ function renderTree(value: unknown, depth: number = 0, xmlMode: boolean = false)
         <span class="data-key data-index">[${index}]</span>: ${childHtml}
       </li>`;
     }).join("");
-    return `<span class="data-bracket">[ ${value.length} items ]</span>${typeBadge("ARR")}
+    const countLabel = value.length === 1 ? "1 item" : `${value.length} items`;
+    return `<span class="data-bracket">[${countLabel}]</span>
       <ul class="data-tree-list">${items}</ul>`;
   }
 
   if (typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>);
     if (entries.length === 0) {
-      return `<span class="data-value data-empty">{ }</span>${typeBadge("OBJ")}`;
+      return `<span class="data-value data-empty">{ }</span>`;
     }
     const items = entries.map(([key, val]) => {
       const childHtml = renderTree(val, depth + 1, xmlMode);
       const isExpandable = typeof val === "object" && val !== null;
       const isAttr = xmlMode && key.startsWith("@_");
       if (isAttr) {
-        return `<li class="data-node">
-          <span class="data-xml-attr">${escapeHtml(key.slice(2))}="${escapeHtml(String(val))}"</span>
+        return `<li class="data-node data-attr-node">
+          <span class="data-xml-attr">${escapeHtml(key.slice(2))}</span> = <span class="data-value data-string">"${escapeHtml(String(val))}"</span>
         </li>`;
       }
-      let attrBadges = "";
-      if (xmlMode && typeof val === "object" && val !== null && !Array.isArray(val)) {
-        const attrKeys = Object.keys(val as Record<string, unknown>).filter(k => k.startsWith("@_"));
-        if (attrKeys.length > 0) {
-          attrBadges = attrKeys.map(k =>
-            `<span class="data-xml-attr">${escapeHtml(k.slice(2))}="${escapeHtml(String((val as Record<string, unknown>)[k]))}"</span>`
-          ).join("");
-        }
-      }
       return `<li class="data-node${isExpandable ? " data-expandable" : ""}">
-        <span class="data-key">${escapeHtml(key)}</span>${attrBadges}: ${childHtml}
+        <span class="data-key">${escapeHtml(key)}</span>: ${childHtml}
       </li>`;
     }).join("");
-    return `<span class="data-bracket">{ ${entries.length} items }</span>${typeBadge("OBJ")}
+    const countLabel = entries.length === 1 ? "1 property" : `${entries.length} properties`;
+    return `<span class="data-bracket">{${countLabel}}</span>
       <ul class="data-tree-list">${items}</ul>`;
   }
 

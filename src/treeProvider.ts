@@ -89,16 +89,12 @@ export class MarkdownTreeProvider implements vscode.TreeDataProvider<MarkdownTre
   private async rebuildTree(): Promise<void> {
     this.root.children.clear();
 
-    const excludePatterns = this.getExcludePatterns();
     const dataFilesEnabled = vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enableDataFiles", true);
 
     const mdFiles = await vscode.workspace.findFiles("**/*.md", "**/{node_modules,.git}/**");
     for (const file of mdFiles) {
       const relative = this.toWorkspaceRelative(file);
       if (!relative) {
-        continue;
-      }
-      if (excludePatterns.length > 0 && this.isExcluded(relative, excludePatterns)) {
         continue;
       }
       this.insertFile(relative, file);
@@ -114,43 +110,9 @@ export class MarkdownTreeProvider implements vscode.TreeDataProvider<MarkdownTre
         if (!relative) {
           continue;
         }
-        if (excludePatterns.length > 0 && this.isExcluded(relative, excludePatterns)) {
-          continue;
-        }
         this.insertFile(relative, file);
       }
     }
-  }
-
-  private getExcludePatterns(): string[] {
-    const raw = vscode.workspace.getConfiguration("markdownMirror").get<string[]>("excludePaths", []);
-    if (!Array.isArray(raw)) {
-      return [];
-    }
-
-    return raw
-      .filter((v): v is string => typeof v === "string")
-      .map((v) => v.trim().replace(/\\/g, "/"))
-      .filter((v) => v.length > 0);
-  }
-
-  private isExcluded(relativePath: string, patterns: string[]): boolean {
-    const normalized = relativePath.replace(/\\/g, "/").toLowerCase();
-    for (const pattern of patterns) {
-      const lp = pattern.toLowerCase();
-      if (normalized === lp || normalized.startsWith(lp + "/")) {
-        return true;
-      }
-
-      if (lp.startsWith("**/")) {
-        const suffix = lp.slice(3);
-        if (normalized === suffix || normalized.endsWith("/" + suffix) || normalized.split("/").some((p) => p === suffix)) {
-          return true;
-        }
-      }
-    }
-
-    return false;
   }
 
   private toWorkspaceRelative(uri: vscode.Uri): string | undefined {

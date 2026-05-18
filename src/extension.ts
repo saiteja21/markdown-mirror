@@ -1911,8 +1911,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const updated = [...current, relativePath];
       await config.update("excludePaths", updated, vscode.ConfigurationTarget.WorkspaceFolder);
-      treeProvider.refresh();
-      void vscode.window.showInformationMessage(`Excluded "${relativePath}" from Markdown Mirror.`);
+      void vscode.window.showInformationMessage(`Excluded "${relativePath}" from Markdown Mirror browser sidebar.`);
     }),
     vscode.commands.registerCommand("markdownMirror.includePath", async (uri?: vscode.Uri) => {
       const targetUri = uri || vscode.window.activeTextEditor?.document.uri;
@@ -1945,8 +1944,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
 
       await config.update("excludePaths", updated, vscode.ConfigurationTarget.WorkspaceFolder);
-      treeProvider.refresh();
-      void vscode.window.showInformationMessage(`Included "${relativePath}" back in Markdown Mirror.`);
+      void vscode.window.showInformationMessage(`Included "${relativePath}" back in Markdown Mirror browser sidebar.`);
     }),
     vscode.workspace.onDidOpenTextDocument((document) => {
       if (document.languageId === "markdown" || document.uri.fsPath.toLowerCase().endsWith(".md")) {

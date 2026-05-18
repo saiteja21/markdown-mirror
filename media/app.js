@@ -4259,37 +4259,6 @@ document.addEventListener("keydown", function(e) {
       e.preventDefault();
       return;
     }
-
-    // Copy individual value
-    if (target.classList.contains("data-copy-btn")) {
-      var copyValue = target.getAttribute("data-copy-value");
-      if (copyValue !== null) {
-        navigator.clipboard.writeText(copyValue).then(function() {
-          var origText = target.textContent;
-          target.textContent = "✓";
-          setTimeout(function() { target.textContent = origText; }, 1200);
-        });
-      }
-      e.preventDefault();
-      return;
-    }
-
-    // Copy All button
-    if (target.closest(".data-copy-all-btn")) {
-      var btn = target.closest(".data-copy-all-btn");
-      var viewer = btn.closest(".data-file-viewer");
-      if (!viewer) { return; }
-      var rawEl = viewer.querySelector(".data-raw-content");
-      if (rawEl) {
-        navigator.clipboard.writeText(rawEl.value).then(function() {
-          var origText = btn.textContent;
-          btn.textContent = "✓ Copied!";
-          setTimeout(function() { btn.textContent = origText; }, 1200);
-        });
-      }
-      e.preventDefault();
-      return;
-    }
   });
 })();
 
