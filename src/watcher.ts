@@ -130,6 +130,10 @@ export class MarkdownWatcher implements vscode.Disposable {
   private publish(uri: vscode.Uri, content: string, reason: "typed" | "saved" | "created", changedLine?: number): void {
     let html: string;
     if (isDataFile(uri.fsPath)) {
+      const dataEnabled = vscode.workspace.getConfiguration("markdownMirror").get<boolean>("enableDataFiles", true);
+      if (!dataEnabled) {
+        return; // Data files disabled — don't broadcast
+      }
       html = renderDataFile(content, uri.fsPath);
     } else {
       html = this.renderer.render({

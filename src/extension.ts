@@ -291,6 +291,7 @@ class NativePreviewManager {
   public static onTargetChanged: ((uri: vscode.Uri | undefined) => void) | undefined;
   /** Set to true when Edit button opens editor — prevents auto-close of the editor tab */
   public static editModeActive = false;
+  private static lastEditTimestamp = 0;
   /** Guard flag to prevent re-entrant close loops */
   public static closingEditor = false;
 
@@ -441,8 +442,14 @@ class NativePreviewManager {
           if (message.command === "markdownMirror.editFile") {
             if (panelUri) {
               NativePreviewManager.editModeActive = true;
+              const editTs = Date.now();
+              NativePreviewManager.lastEditTimestamp = editTs;
               await vscode.window.showTextDocument(panelUri, { viewColumn: vscode.ViewColumn.One, preview: false });
-              setTimeout(() => { NativePreviewManager.editModeActive = false; }, 500);
+              setTimeout(() => {
+                if (NativePreviewManager.lastEditTimestamp === editTs) {
+                  NativePreviewManager.editModeActive = false;
+                }
+              }, 500);
             } else {
               void vscode.window.showInformationMessage("No file is currently being previewed.");
             }
@@ -458,12 +465,16 @@ class NativePreviewManager {
             await vscode.env.openExternal(vscode.Uri.parse(launchUrl.toString()));
           } else if (message.command === "markdownMirror.printPreview") {
             if (panelUri) {
-              const rendered = await runtime.renderDocumentHtmlForExport(panelUri);
-              const printHtml = buildStandaloneHtml(rendered.title, rendered.html, "print");
-              const printUri = vscode.Uri.joinPath(context.globalStorageUri, "print-preview.html");
-              await vscode.workspace.fs.createDirectory(context.globalStorageUri);
-              await vscode.workspace.fs.writeFile(printUri, new TextEncoder().encode(printHtml));
-              await vscode.env.openExternal(printUri);
+              try {
+                const rendered = await runtime.renderDocumentHtmlForExport(panelUri);
+                const printHtml = buildStandaloneHtml(rendered.title, rendered.html, "print");
+                const printUri = vscode.Uri.joinPath(context.globalStorageUri, "print-preview.html");
+                await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+                await vscode.workspace.fs.writeFile(printUri, new TextEncoder().encode(printHtml));
+                await vscode.env.openExternal(printUri);
+              } catch (err) {
+                void vscode.window.showErrorMessage(`Print preview failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+              }
             }
           } else if (message.command === "markdownMirror.showBacklinks") {
             if (panelUri) {
@@ -483,9 +494,8 @@ class NativePreviewManager {
             if (panelUri) {
               await vscode.commands.executeCommand("markdownMirror.findHeading", panelUri);
             }
-          } else {
-            await vscode.commands.executeCommand(message.command);
           }
+          // No fallthrough — only explicitly handled commands are executed
         } else if (message.type === "open-link" && message.href) {
           const href = message.href;
           if (/^https?:\/\//i.test(href)) {
@@ -2155,42 +2165,55 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (!editor || editor.document.uri.scheme !== "file" || NativePreviewManager.closingEditor) {
+      if (!editor || editor.document.uri.scheme !== "file") {
+        return;
+      }
+
+      // Diagnostics always run, even during editor close operations
+      if (editor.document.languageId === "markdown" || editor.document.uri.fsPath.toLowerCase().endsWith(".md")) {
+        scheduleDiagnostics(editor.document.uri);
+      }
+
+      // Skip preview logic while closing an editor to prevent loops
+      if (NativePreviewManager.closingEditor) {
         return;
       }
 
       if (NativePreviewManager.isSupportedPreviewFile(editor.document.uri)) {
-          const config = vscode.workspace.getConfiguration("markdownMirror");
-          const autoPreview = config.get<boolean>("autoPreview", true);
-          const previewOnly = config.get<boolean>("previewOnly", true);
-          const fileUri = editor.document.uri.toString();
-          const shouldCloseEditor = previewOnly && autoPreview && !NativePreviewManager.editModeActive;
+        const config = vscode.workspace.getConfiguration("markdownMirror");
+        const autoPreview = config.get<boolean>("autoPreview", true);
+        const previewOnly = config.get<boolean>("previewOnly", true);
+        const fileUri = editor.document.uri.toString();
+        const shouldCloseEditor = previewOnly && autoPreview && !NativePreviewManager.editModeActive;
 
-          const closeEditor = (): void => {
-            NativePreviewManager.closingEditor = true;
-            void vscode.commands.executeCommand("workbench.action.closeActiveEditor").then(() => {
-              NativePreviewManager.closingEditor = false;
-            });
-          };
+        const closeEditor = (): void => {
+          // Verify the target file is still the active editor before closing
+          if (vscode.window.activeTextEditor?.document.uri.toString() !== fileUri) {
+            return;
+          }
+          NativePreviewManager.closingEditor = true;
+          const safetyTimer = setTimeout(() => { NativePreviewManager.closingEditor = false; }, 2000);
+          vscode.commands.executeCommand("workbench.action.closeActiveEditor").then(
+            () => { clearTimeout(safetyTimer); NativePreviewManager.closingEditor = false; },
+            () => { clearTimeout(safetyTimer); NativePreviewManager.closingEditor = false; }
+          );
+        };
 
-          if (NativePreviewManager.hasPanelForUri(fileUri)) {
-            NativePreviewManager.updateTarget(fileUri);
-            if (shouldCloseEditor) {
+        if (NativePreviewManager.hasPanelForUri(fileUri)) {
+          NativePreviewManager.updateTarget(fileUri);
+          if (shouldCloseEditor) {
+            closeEditor();
+          }
+        } else if (autoPreview) {
+          if (shouldCloseEditor) {
+            void NativePreviewManager.show(runtime, context, editor.document.uri).then(() => {
               closeEditor();
-            }
-          } else if (autoPreview) {
-            if (shouldCloseEditor) {
-              void NativePreviewManager.show(runtime, context, editor.document.uri).then(() => {
-                closeEditor();
-              });
-            } else {
-              void NativePreviewManager.show(runtime, context, editor.document.uri);
-            }
+            });
+          } else {
+            void NativePreviewManager.show(runtime, context, editor.document.uri);
           }
         }
-        if (editor.document.languageId === "markdown" || editor.document.uri.fsPath.toLowerCase().endsWith(".md")) {
-          scheduleDiagnostics(editor.document.uri);
-        }
+      }
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration("markdownMirror")) {
