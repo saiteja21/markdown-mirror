@@ -283,15 +283,22 @@ class MirrorRuntime implements vscode.Disposable {
 }
 
 class NativePreviewManager {
-  private static currentPanel: vscode.WebviewPanel | undefined;
-  private static currentTargetUri: string | undefined;
+  /** Map of file URI string → webview panel */
+  private static panels = new Map<string, vscode.WebviewPanel>();
+  /** The URI of the most recently focused preview panel */
+  private static activeTargetUri: string | undefined;
   private static focusModeEnabled = false;
   public static onTargetChanged: ((uri: vscode.Uri | undefined) => void) | undefined;
   /** Set to true when Edit button opens editor — prevents auto-close of the editor tab */
   public static editModeActive = false;
 
   public static get hasPanel(): boolean {
-    return !!this.currentPanel;
+    return this.panels.size > 0;
+  }
+
+  /** Check if a preview panel already exists for the given URI */
+  public static hasPanelForUri(uri: string): boolean {
+    return this.panels.has(uri);
   }
 
   public static isSupportedPreviewFile(uri: vscode.Uri): boolean {
@@ -324,79 +331,104 @@ class NativePreviewManager {
   }
 
   public static getCurrentTargetUri(): vscode.Uri | undefined {
-    if (!this.currentTargetUri) {
+    if (!this.activeTargetUri) {
       return undefined;
     }
 
     try {
-      return vscode.Uri.parse(this.currentTargetUri);
+      return vscode.Uri.parse(this.activeTargetUri);
     } catch {
       return undefined;
     }
   }
 
   public static updateTarget(uri: string): void {
-    this.currentTargetUri = uri;
-    this.onTargetChanged?.(this.getCurrentTargetUri());
-    if (this.currentPanel) {
-      this.currentPanel.webview.postMessage({ type: "force-update-target", uri });
+    // In multi-panel mode, if a panel exists for this URI, reveal it
+    const panel = this.panels.get(uri);
+    if (panel) {
+      this.activeTargetUri = uri;
+      this.onTargetChanged?.(this.getCurrentTargetUri());
+      panel.reveal(vscode.ViewColumn.Beside, true);
     }
   }
 
   public static revealHeadingInPreview(heading: TocHeading): void {
-    if (!this.currentPanel) {
-      return;
-    }
-
-    this.currentPanel.webview.postMessage({ type: "reveal-heading", heading });
+    const panel = this.activeTargetUri ? this.panels.get(this.activeTargetUri) : undefined;
+    panel?.webview.postMessage({ type: "reveal-heading", heading });
   }
 
   public static print(): void {
-    this.currentPanel?.webview.postMessage({ type: "print" });
+    const panel = this.activeTargetUri ? this.panels.get(this.activeTargetUri) : undefined;
+    panel?.webview.postMessage({ type: "print" });
   }
 
   public static setFocusMode(enabled: boolean): void {
     this.focusModeEnabled = enabled;
-    this.currentPanel?.webview.postMessage({ type: "toggle-focus-mode", enabled });
+    // Apply to all open panels
+    for (const panel of this.panels.values()) {
+      panel.webview.postMessage({ type: "toggle-focus-mode", enabled });
+    }
   }
 
   private static lastBaseUrl: string | undefined;
 
   public static async show(runtime: MirrorRuntime, context: vscode.ExtensionContext, uri?: vscode.Uri): Promise<void> {
     const targetUri = this.resolvePreviewTarget(uri);
-    if (targetUri) {
-      this.currentTargetUri = targetUri;
-      this.onTargetChanged?.(vscode.Uri.parse(targetUri));
+    if (!targetUri) {
+      return;
     }
+
+    this.activeTargetUri = targetUri;
+    this.onTargetChanged?.(vscode.Uri.parse(targetUri));
 
     let baseUrl = runtime.currentBaseUrl;
     if (!baseUrl) {
       baseUrl = await runtime.start();
     }
 
-    if (NativePreviewManager.currentPanel) {
-      // Always refresh HTML to ensure correct server URL
-      NativePreviewManager.currentPanel.webview.html = this.getHtmlForWebview(baseUrl, targetUri || this.currentTargetUri || "");
+    // If a panel already exists for this URI, just reveal it
+    const existing = this.panels.get(targetUri);
+    if (existing) {
+      existing.webview.html = this.getHtmlForWebview(baseUrl, targetUri);
       this.lastBaseUrl = baseUrl;
-      NativePreviewManager.currentPanel.reveal(vscode.ViewColumn.Beside, true);
+      existing.reveal(vscode.ViewColumn.Beside, true);
       return;
     }
 
     this.lastBaseUrl = baseUrl;
 
-    NativePreviewManager.currentPanel = vscode.window.createWebviewPanel(
+    // Derive a short title from the file path
+    const parsedUri = vscode.Uri.parse(targetUri);
+    const fileName = path.basename(parsedUri.fsPath);
+
+    const panel = vscode.window.createWebviewPanel(
       "markdownMirrorNative",
-      "Markdown Mirror Preview",
+      `Preview: ${fileName}`,
       { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
       {
         enableScripts: true,
+        enableFindWidget: true,
         retainContextWhenHidden: true
       }
     );
 
-    NativePreviewManager.currentPanel.webview.html = this.getHtmlForWebview(baseUrl, targetUri || "");
+    this.panels.set(targetUri, panel);
 
-    NativePreviewManager.currentPanel.webview.onDidReceiveMessage(
+    panel.webview.html = this.getHtmlForWebview(baseUrl, targetUri);
+
+    // Track which panel is active when it gains focus
+    panel.onDidChangeViewState(
+      (e) => {
+        if (e.webviewPanel.active) {
+          this.activeTargetUri = targetUri;
+          this.onTargetChanged?.(vscode.Uri.parse(targetUri));
+        }
+      },
+      null,
+      context.subscriptions
+    );
+
+    panel.webview.onDidReceiveMessage(
       async (message: { type: string; command?: string; href?: string; action?: string }) => {
         if (message.type === "format-markdown" && message.action) {
           await applyMarkdownFormatting(message.action);
@@ -471,9 +503,15 @@ class NativePreviewManager {
       context.subscriptions
     );
 
-    NativePreviewManager.currentPanel.onDidDispose(
+    panel.onDidDispose(
       () => {
-        NativePreviewManager.currentPanel = undefined;
+        this.panels.delete(targetUri);
+        if (this.activeTargetUri === targetUri) {
+          // Set active to the most recent remaining panel, or undefined
+          const remaining = Array.from(this.panels.keys());
+          this.activeTargetUri = remaining.length > 0 ? remaining[remaining.length - 1] : undefined;
+          this.onTargetChanged?.(this.getCurrentTargetUri());
+        }
       },
       null,
       context.subscriptions
@@ -2034,10 +2072,13 @@ export function activate(context: vscode.ExtensionContext): void {
           const config = vscode.workspace.getConfiguration("markdownMirror");
           const autoPreview = config.get<boolean>("autoPreview", true);
           const previewOnly = config.get<boolean>("previewOnly", true);
+          const fileUri = editor.document.uri.toString();
 
-          if (NativePreviewManager.hasPanel) {
-            NativePreviewManager.updateTarget(editor.document.uri.toString());
+          if (NativePreviewManager.hasPanelForUri(fileUri)) {
+            // Panel exists for this file — reveal it
+            NativePreviewManager.updateTarget(fileUri);
           } else if (autoPreview) {
+            // No panel for this file — create one
             void NativePreviewManager.show(runtime, context, editor.document.uri);
           }
 
