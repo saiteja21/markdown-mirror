@@ -308,6 +308,9 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
     this.activeTargetUri = targetUri;
     this.onTargetChanged?.(document.uri);
 
+    // Pin the tab so single-clicking another file opens a new tab instead of replacing
+    void vscode.commands.executeCommand("workbench.action.pinEditor");
+
     let baseUrl = this.runtime.currentBaseUrl;
     if (!baseUrl) {
       baseUrl = await this.runtime.start();
@@ -349,17 +352,14 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
             try {
               const rendered = await this.runtime.renderDocumentHtmlForExport(panelUri);
               const printHtml = buildStandaloneHtml(rendered.title, rendered.html, "print");
-              const printUri = vscode.Uri.joinPath(this.context.globalStorageUri, "print-preview.html");
-              await vscode.workspace.fs.createDirectory(this.context.globalStorageUri);
-              await vscode.workspace.fs.writeFile(printUri, new TextEncoder().encode(printHtml));
-              await vscode.env.openExternal(printUri);
+              // Write to OS temp directory (file:// scheme) so openExternal works
+              const tmpDir = require("os").tmpdir();
+              const tmpPath = path.join(tmpDir, "markdown-mirror-print.html");
+              await fs.writeFile(tmpPath, printHtml, "utf-8");
+              await vscode.env.openExternal(vscode.Uri.file(tmpPath));
             } catch (err) {
               void vscode.window.showErrorMessage(`Print preview failed: ${err instanceof Error ? err.message : "Unknown error"}`);
             }
-          } else if (message.command === "markdownMirror.showBacklinks") {
-            await vscode.commands.executeCommand("markdownMirror.showBacklinks", panelUri);
-          } else if (message.command === "markdownMirror.exportHtml") {
-            await vscode.commands.executeCommand("markdownMirror.exportHtml", panelUri);
           } else if (message.command === "markdownMirror.exportToWord") {
             await vscode.commands.executeCommand("markdownMirror.exportToWord", panelUri);
           }
@@ -595,12 +595,10 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
     <div class="mm-toolbar" id="mm-toolbar">
       <button data-cmd="editFile" title="Edit source file (Ctrl+E)">&#9998; Edit</button>
       <div class="mm-sep"></div>
-      <button data-cmd="exportHtml" title="Export HTML">&#128196; Export HTML</button>
       <button data-cmd="exportToWord" title="Export Word">&#128220; Export Word</button>
       <button data-cmd="printPreview" title="Print / PDF">&#128424; Print</button>
       <div class="mm-sep"></div>
       <button data-cmd="toggleToc" title="Table of Contents">&#128209; TOC</button>
-      <button data-cmd="showBacklinks" title="Backlinks">&#128257; Backlinks</button>
       <div class="mm-sep"></div>
       <button data-cmd="openInBrowser" title="Open in Browser">&#127760; Open in Browser</button>
       <button data-cmd="openSettings" title="Open Settings">&#9881; Settings</button>
@@ -1362,6 +1360,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("markdownMirror.openInPreview", async (uri: vscode.Uri) => {
       await vscode.commands.executeCommand("vscode.openWith", uri, MarkdownMirrorEditorProvider.viewType);
+      // Pin the tab so single-clicking another file doesn't replace it
+      await vscode.commands.executeCommand("workbench.action.pinEditor");
     }),
     vscode.commands.registerCommand("markdownMirror.openActiveInPreview", async () => {
       const activeUri = vscode.window.activeTextEditor?.document.uri;
