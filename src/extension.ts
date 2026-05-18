@@ -432,15 +432,16 @@ class NativePreviewManager {
 
     panel.webview.onDidReceiveMessage(
       async (message: { type: string; command?: string; href?: string; action?: string }) => {
+        // Each panel knows its own file URI — use it directly instead of global state
+        const panelUri = targetUri ? vscode.Uri.parse(targetUri) : undefined;
+
         if (message.type === "format-markdown" && message.action) {
           await applyMarkdownFormatting(message.action);
         } else if (message.type === "run-command" && message.command) {
           if (message.command === "markdownMirror.editFile") {
-            const editTarget = NativePreviewManager.getCurrentTargetUri();
-            if (editTarget) {
+            if (panelUri) {
               NativePreviewManager.editModeActive = true;
-              await vscode.window.showTextDocument(editTarget, { viewColumn: vscode.ViewColumn.One, preview: false });
-              // Reset after a short delay to allow onDidChangeActiveTextEditor to see the flag
+              await vscode.window.showTextDocument(panelUri, { viewColumn: vscode.ViewColumn.One, preview: false });
               setTimeout(() => { NativePreviewManager.editModeActive = false; }, 500);
             } else {
               void vscode.window.showInformationMessage("No file is currently being previewed.");
@@ -451,16 +452,13 @@ class NativePreviewManager {
             const currentBaseUrl = runtime.currentBaseUrl ?? await runtime.start();
             const launchUrl = new URL(currentBaseUrl);
             launchUrl.searchParams.set("mm_theme", getVsCodeThemeKind());
-            const currentTarget = NativePreviewManager.getCurrentTargetUri();
-            if (currentTarget) {
-              launchUrl.searchParams.set("mm_open_uri", currentTarget.toString());
+            if (panelUri) {
+              launchUrl.searchParams.set("mm_open_uri", panelUri.toString());
             }
             await vscode.env.openExternal(vscode.Uri.parse(launchUrl.toString()));
           } else if (message.command === "markdownMirror.printPreview") {
-            // VS Code webviews don't support window.print() — export HTML and open in browser
-            const printTarget = NativePreviewManager.getCurrentTargetUri();
-            if (printTarget) {
-              const rendered = await runtime.renderDocumentHtmlForExport(printTarget);
+            if (panelUri) {
+              const rendered = await runtime.renderDocumentHtmlForExport(panelUri);
               const printHtml = buildStandaloneHtml(rendered.title, rendered.html, "print");
               const printUri = vscode.Uri.joinPath(context.globalStorageUri, "print-preview.html");
               await vscode.workspace.fs.createDirectory(context.globalStorageUri);
@@ -468,11 +466,22 @@ class NativePreviewManager {
               await vscode.env.openExternal(printUri);
             }
           } else if (message.command === "markdownMirror.showBacklinks") {
-            const backlinkTarget = NativePreviewManager.getCurrentTargetUri();
-            if (backlinkTarget) {
-              await vscode.commands.executeCommand("markdownMirror.showBacklinks", backlinkTarget);
+            if (panelUri) {
+              await vscode.commands.executeCommand("markdownMirror.showBacklinks", panelUri);
             } else {
               void vscode.window.showInformationMessage("Open a markdown file in preview first.");
+            }
+          } else if (message.command === "markdownMirror.exportHtml") {
+            if (panelUri) {
+              await vscode.commands.executeCommand("markdownMirror.exportHtml", panelUri);
+            }
+          } else if (message.command === "markdownMirror.exportToWord") {
+            if (panelUri) {
+              await vscode.commands.executeCommand("markdownMirror.exportToWord", panelUri);
+            }
+          } else if (message.command === "markdownMirror.findHeading") {
+            if (panelUri) {
+              await vscode.commands.executeCommand("markdownMirror.findHeading", panelUri);
             }
           } else {
             await vscode.commands.executeCommand(message.command);
@@ -482,12 +491,10 @@ class NativePreviewManager {
           if (/^https?:\/\//i.test(href)) {
             await vscode.env.openExternal(vscode.Uri.parse(href));
           } else {
-            // Relative markdown link - resolve against current target document
-            const currentTarget = NativePreviewManager.getCurrentTargetUri();
-            if (currentTarget) {
-              const dir = vscode.Uri.joinPath(currentTarget, "..");
+            if (panelUri) {
+              const dir = vscode.Uri.joinPath(panelUri, "..");
               const resolved = vscode.Uri.joinPath(dir, href.split("#")[0]);
-              if (resolved.fsPath.toLowerCase().endsWith(".md")) {
+              if (resolved.fsPath.toLowerCase().endsWith(".md") || isDataFile(resolved.fsPath)) {
                 await vscode.commands.executeCommand("markdownMirror.openInPreview", resolved);
               } else {
                 try {
@@ -648,6 +655,31 @@ class NativePreviewManager {
       .data-view-btn:hover { background: var(--vscode-list-hoverBackground, #f6f8fa); }
       .data-view-btn.active { background: var(--vscode-button-background, #0969da); color: var(--vscode-button-foreground, #fff); border-color: var(--vscode-button-background, #0969da); }
       .data-view-panel { display: none; } .data-view-panel.active { display: block; }
+
+      /* Table of Contents panel */
+      .mm-toc {
+        position: fixed; top: 48px; right: 12px; width: 280px; max-height: calc(100vh - 80px);
+        background: var(--vscode-editorWidget-background, #fff); border: 1px solid var(--vscode-panel-border, #e0e0e0);
+        border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); z-index: 200; overflow-y: auto;
+        font-size: 13px; display: none;
+      }
+      .mm-toc:not([hidden]) { display: block; }
+      .mm-toc-header {
+        display: flex; align-items: center; justify-content: space-between; padding: 10px 14px;
+        font-weight: 600; font-size: 13px; border-bottom: 1px solid var(--vscode-panel-border, #e0e0e0);
+        position: sticky; top: 0; background: var(--vscode-editorWidget-background, #fff);
+      }
+      .mm-toc-close { border: none; background: none; cursor: pointer; font-size: 18px; color: var(--vscode-descriptionForeground, #666); padding: 0 4px; }
+      .mm-toc-close:hover { color: var(--vscode-errorForeground, #e00); }
+      .mm-toc-list { padding: 8px 0; }
+      .mm-toc-item {
+        display: block; padding: 4px 14px; color: var(--vscode-editor-foreground, #333); text-decoration: none;
+        cursor: pointer; border-left: 2px solid transparent; font-size: 12px; line-height: 1.5;
+      }
+      .mm-toc-item:hover { background: var(--vscode-list-hoverBackground, #f0f0f0); border-left-color: var(--vscode-focusBorder, #007acc); }
+      .mm-toc-item[data-level="2"] { padding-left: 28px; }
+      .mm-toc-item[data-level="3"] { padding-left: 42px; font-size: 11px; }
+      .mm-toc-item[data-level="4"], .mm-toc-item[data-level="5"], .mm-toc-item[data-level="6"] { padding-left: 56px; font-size: 11px; color: var(--vscode-descriptionForeground, #888); }
     </style>
   </head>
   <body class="vscode-body">
@@ -658,13 +690,17 @@ class NativePreviewManager {
       <button data-cmd="exportToWord" title="Export Word">&#128220; Export Word</button>
       <button data-cmd="printPreview" title="Print / PDF">&#128424; Print</button>
       <div class="mm-sep"></div>
-      <button data-cmd="findHeading" title="Find Heading">&#128209; Headings</button>
+      <button data-cmd="toggleToc" title="Table of Contents">&#128209; TOC</button>
       <button data-cmd="showBacklinks" title="Backlinks">&#128257; Backlinks</button>
       <div class="mm-sep"></div>
       <button data-cmd="openInBrowser" title="Open in Browser">&#127760; Open in Browser</button>
       <button data-cmd="openSettings" title="Open Settings">&#9881; Settings</button>
     </div>
     <div id="loader">Connecting to Markdown Mirror server...</div>
+    <div id="mm-toc" class="mm-toc" hidden>
+      <div class="mm-toc-header">Table of Contents <button id="mm-toc-close" class="mm-toc-close">&times;</button></div>
+      <nav id="mm-toc-list" class="mm-toc-list"></nav>
+    </div>
     <div id="content" class="markdown-body"></div>
 
     <script nonce="${nonce}">
@@ -677,6 +713,49 @@ class NativePreviewManager {
       const loaderEl = document.getElementById('loader');
 
       const vscodeApi = acquireVsCodeApi();
+      const tocEl = document.getElementById('mm-toc');
+      const tocListEl = document.getElementById('mm-toc-list');
+      const tocCloseEl = document.getElementById('mm-toc-close');
+
+      function buildToc() {
+        if (!tocListEl) return;
+        tocListEl.innerHTML = '';
+        const headings = contentEl.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        headings.forEach(function(h) {
+          const level = parseInt(h.tagName.charAt(1), 10);
+          const text = h.textContent || '';
+          const id = h.id || '';
+          const item = document.createElement('a');
+          item.className = 'mm-toc-item';
+          item.setAttribute('data-level', String(level));
+          item.textContent = text.replace(/^#+\s*/, '');
+          item.addEventListener('click', function() {
+            if (id) {
+              const target = document.getElementById(id);
+              if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            } else {
+              h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          });
+          tocListEl.appendChild(item);
+        });
+      }
+
+      function toggleToc() {
+        if (!tocEl) return;
+        if (tocEl.hidden) {
+          buildToc();
+          tocEl.hidden = false;
+        } else {
+          tocEl.hidden = true;
+        }
+      }
+
+      if (tocCloseEl) {
+        tocCloseEl.addEventListener('click', function() {
+          if (tocEl) tocEl.hidden = true;
+        });
+      }
 
       // Toolbar button clicks → send command to extension host
       document.getElementById('mm-toolbar').addEventListener('click', function(e) {
@@ -687,6 +766,11 @@ class NativePreviewManager {
         }
         const btn = e.target.closest('[data-cmd]');
         if (!btn) return;
+        // Handle TOC toggle locally in the webview
+        if (btn.dataset.cmd === 'toggleToc') {
+          toggleToc();
+          return;
+        }
         vscodeApi.postMessage({ type: 'run-command', command: 'markdownMirror.' + btn.dataset.cmd });
       });
 
@@ -849,6 +933,8 @@ class NativePreviewManager {
             if (data.html) {
               contentEl.innerHTML = data.html;
               executeScriptsWhenReady(contentEl);
+              // Rebuild TOC if it's visible
+              if (tocEl && !tocEl.hidden) { buildToc(); }
               if (pendingHeadingReveal) {
                 revealHeading(pendingHeadingReveal);
                 pendingHeadingReveal = null;
