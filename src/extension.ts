@@ -559,6 +559,50 @@ class NativePreviewManager {
         background: var(--vscode-button-hoverBackground, #005fa3);
       }
       .mm-toolbar .mm-sep { width: 1px; background: var(--vscode-panel-border, #ccc); margin: 2px 4px; }
+
+      /* Data file viewer (YAML/JSON/XML) — self-contained for native mode */
+      .data-file-viewer { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; }
+      .data-file-header { display: flex; align-items: center; gap: 8px; padding: 12px 0; margin-bottom: 12px; }
+      .data-file-name { font-size: 1.1em; font-weight: 600; color: var(--vscode-editor-foreground, #1e293b); }
+      .data-file-badge { font-size: 0.7em; font-weight: 700; text-transform: uppercase; padding: 2px 8px; border-radius: 4px; background: #0969da; color: #fff; }
+      .data-file-viewer[data-file-type="yaml"] .data-file-badge { background: #cf222e; }
+      .data-file-viewer[data-file-type="json"] .data-file-badge { background: #0969da; }
+      .data-file-viewer[data-file-type="xml"] .data-file-badge { background: #8b5cf6; }
+      .data-parse-error { padding: 12px 16px; background: var(--vscode-inputValidation-errorBackground, #ffebe9); border: 1px solid var(--vscode-inputValidation-errorBorder, #ff818266); border-radius: 6px; color: var(--vscode-errorForeground, #cf222e); font-family: monospace; font-size: 0.85em; margin-bottom: 12px; }
+      .data-source-code { margin: 0; padding: 16px; border-radius: 8px; background: var(--vscode-textCodeBlock-background, #f6f8fa); overflow-x: auto; font-size: 0.85em; line-height: 1.6; }
+
+      /* OpenAPI spec rendering — self-contained for native mode */
+      .mm-openapi { max-width: 900px; }
+      .mm-openapi-header { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--vscode-panel-border, #e0e0e0); }
+      .mm-openapi-title { font-size: 1.6em; font-weight: 700; margin: 0; }
+      .mm-openapi-version { display: inline-block; background: var(--vscode-badge-background, #e8f4fd); color: var(--vscode-badge-foreground, #0366d6); padding: 2px 8px; border-radius: 4px; font-size: 0.8em; margin-left: 8px; vertical-align: middle; }
+      .mm-openapi-desc { color: var(--vscode-descriptionForeground, #555); margin-top: 8px; line-height: 1.5; }
+      .mm-openapi-section { margin-bottom: 32px; }
+      .mm-openapi-section h2 { font-size: 1.2em; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--vscode-panel-border, #eee); }
+      .mm-openapi-servers code { background: var(--vscode-textCodeBlock-background, #f0f0f0); padding: 2px 6px; border-radius: 3px; }
+      .mm-openapi-endpoint { border: 1px solid var(--vscode-panel-border, #e0e0e0); border-radius: 8px; margin-bottom: 12px; padding: 16px; }
+      .mm-openapi-endpoint-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .mm-openapi-method { display: inline-block; padding: 3px 10px; border-radius: 4px; font-weight: 700; font-size: 0.8em; color: #fff; min-width: 60px; text-align: center; }
+      .mm-method-get { background: #28a745; } .mm-method-post { background: #0366d6; } .mm-method-put { background: #e36209; }
+      .mm-method-patch { background: #6f42c1; } .mm-method-delete { background: #cb2431; } .mm-method-options, .mm-method-head { background: #6a737d; }
+      .mm-openapi-path { font-size: 0.95em; font-weight: 600; }
+      .mm-openapi-summary { color: var(--vscode-descriptionForeground, #666); font-size: 0.9em; }
+      .mm-openapi-op-desc { margin: 8px 0; font-size: 0.9em; color: var(--vscode-descriptionForeground, #555); }
+      .mm-openapi-params-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.85em; }
+      .mm-openapi-params-table th { background: var(--vscode-editorWidget-background, #fafafa); text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--vscode-panel-border, #eee); font-weight: 600; }
+      .mm-openapi-params-table td { padding: 6px 10px; border-bottom: 1px solid var(--vscode-panel-border, #f0f0f0); }
+      .mm-openapi-response { margin: 6px 0; display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+      .mm-openapi-status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-weight: 600; font-size: 0.85em; }
+      .mm-status-success { background: #e6ffec; color: #22863a; } .mm-status-error { background: #ffeef0; color: #cb2431; } .mm-status-info { background: #e8f4fd; color: #0366d6; }
+      .mm-openapi-schema pre { background: var(--vscode-textCodeBlock-background, #f6f8fa); padding: 10px; border-radius: 4px; font-size: 0.8em; overflow-x: auto; max-height: 200px; }
+      .mm-openapi-schema-def { margin-bottom: 16px; }
+      .mm-openapi-tags { margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
+      .mm-openapi-tag { background: var(--vscode-badge-background, #f0f0f0); border-radius: 12px; padding: 2px 10px; font-size: 0.75em; color: var(--vscode-descriptionForeground, #555); }
+      .data-view-toggle { margin-left: auto; display: flex; gap: 4px; }
+      .data-view-btn { padding: 4px 12px; border: 1px solid var(--vscode-panel-border, #d0d7de); border-radius: 6px; background: transparent; cursor: pointer; font-size: 0.8em; color: var(--vscode-editor-foreground, #24292f); }
+      .data-view-btn:hover { background: var(--vscode-list-hoverBackground, #f6f8fa); }
+      .data-view-btn.active { background: var(--vscode-button-background, #0969da); color: var(--vscode-button-foreground, #fff); border-color: var(--vscode-button-background, #0969da); }
+      .data-view-panel { display: none; } .data-view-panel.active { display: block; }
     </style>
   </head>
   <body class="vscode-body">
@@ -606,6 +650,24 @@ class NativePreviewManager {
         if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
           e.preventDefault();
           vscodeApi.postMessage({ type: 'run-command', command: 'markdownMirror.editFile' });
+        }
+      });
+
+      // Data file view toggle (for OpenAPI API/Source switch)
+      contentEl.addEventListener('click', function(e) {
+        var btn = e.target.closest('.data-view-btn');
+        if (btn) {
+          var viewer = btn.closest('.data-file-viewer');
+          if (!viewer) return;
+          var view = btn.getAttribute('data-view');
+          viewer.querySelectorAll('.data-view-btn').forEach(function(b) { b.classList.remove('active'); });
+          viewer.querySelectorAll('.data-view-panel').forEach(function(p) { p.classList.remove('active'); });
+          btn.classList.add('active');
+          var panelClass = view === 'source' ? 'data-source-panel' : 'data-tree-panel';
+          var panel = viewer.querySelector('.' + panelClass);
+          if (panel) panel.classList.add('active');
+          e.preventDefault();
+          return;
         }
       });
 
