@@ -291,6 +291,8 @@ class NativePreviewManager {
   public static onTargetChanged: ((uri: vscode.Uri | undefined) => void) | undefined;
   /** Set to true when Edit button opens editor — prevents auto-close of the editor tab */
   public static editModeActive = false;
+  /** Guard flag to prevent re-entrant close loops */
+  public static closingEditor = false;
 
   public static get hasPanel(): boolean {
     return this.panels.size > 0;
@@ -2067,30 +2069,42 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => {
-      if (editor && editor.document.uri.scheme === "file") {
-        if (NativePreviewManager.isSupportedPreviewFile(editor.document.uri)) {
+      if (!editor || editor.document.uri.scheme !== "file" || NativePreviewManager.closingEditor) {
+        return;
+      }
+
+      if (NativePreviewManager.isSupportedPreviewFile(editor.document.uri)) {
           const config = vscode.workspace.getConfiguration("markdownMirror");
           const autoPreview = config.get<boolean>("autoPreview", true);
           const previewOnly = config.get<boolean>("previewOnly", true);
           const fileUri = editor.document.uri.toString();
+          const shouldCloseEditor = previewOnly && autoPreview && !NativePreviewManager.editModeActive;
+
+          const closeEditor = (): void => {
+            NativePreviewManager.closingEditor = true;
+            void vscode.commands.executeCommand("workbench.action.closeActiveEditor").then(() => {
+              NativePreviewManager.closingEditor = false;
+            });
+          };
 
           if (NativePreviewManager.hasPanelForUri(fileUri)) {
-            // Panel exists for this file — reveal it
             NativePreviewManager.updateTarget(fileUri);
+            if (shouldCloseEditor) {
+              closeEditor();
+            }
           } else if (autoPreview) {
-            // No panel for this file — create one
-            void NativePreviewManager.show(runtime, context, editor.document.uri);
-          }
-
-          // Close the editor tab if previewOnly is enabled and this wasn't triggered by the Edit button
-          if (previewOnly && autoPreview && !NativePreviewManager.editModeActive) {
-            void vscode.commands.executeCommand("workbench.action.closeActiveEditor");
+            if (shouldCloseEditor) {
+              void NativePreviewManager.show(runtime, context, editor.document.uri).then(() => {
+                closeEditor();
+              });
+            } else {
+              void NativePreviewManager.show(runtime, context, editor.document.uri);
+            }
           }
         }
         if (editor.document.languageId === "markdown" || editor.document.uri.fsPath.toLowerCase().endsWith(".md")) {
           scheduleDiagnostics(editor.document.uri);
         }
-      }
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration("markdownMirror")) {
