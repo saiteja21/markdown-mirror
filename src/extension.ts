@@ -287,6 +287,8 @@ class NativePreviewManager {
   private static currentTargetUri: string | undefined;
   private static focusModeEnabled = false;
   public static onTargetChanged: ((uri: vscode.Uri | undefined) => void) | undefined;
+  /** Set to true when Edit button opens editor — prevents auto-close of the editor tab */
+  public static editModeActive = false;
 
   public static get hasPanel(): boolean {
     return !!this.currentPanel;
@@ -402,9 +404,12 @@ class NativePreviewManager {
           if (message.command === "markdownMirror.editFile") {
             const editTarget = NativePreviewManager.getCurrentTargetUri();
             if (editTarget) {
+              NativePreviewManager.editModeActive = true;
               await vscode.window.showTextDocument(editTarget, { viewColumn: vscode.ViewColumn.One, preview: false });
+              // Reset after a short delay to allow onDidChangeActiveTextEditor to see the flag
+              setTimeout(() => { NativePreviewManager.editModeActive = false; }, 500);
             } else {
-              void vscode.window.showInformationMessage("No markdown file is currently being previewed.");
+              void vscode.window.showInformationMessage("No file is currently being previewed.");
             }
           } else if (message.command === "markdownMirror.openSettings") {
             await vscode.commands.executeCommand("workbench.action.openSettings", "markdownMirror");
@@ -2026,13 +2031,19 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor && editor.document.uri.scheme === "file") {
         if (NativePreviewManager.isSupportedPreviewFile(editor.document.uri)) {
-          const autoPreview = vscode.workspace.getConfiguration("markdownMirror").get<boolean>("autoPreview", true);
+          const config = vscode.workspace.getConfiguration("markdownMirror");
+          const autoPreview = config.get<boolean>("autoPreview", true);
+          const previewOnly = config.get<boolean>("previewOnly", true);
+
           if (NativePreviewManager.hasPanel) {
-            // Panel already exists — just update the target
             NativePreviewManager.updateTarget(editor.document.uri.toString());
           } else if (autoPreview) {
-            // Panel doesn't exist — auto-open it if setting is enabled
             void NativePreviewManager.show(runtime, context, editor.document.uri);
+          }
+
+          // Close the editor tab if previewOnly is enabled and this wasn't triggered by the Edit button
+          if (previewOnly && autoPreview && !NativePreviewManager.editModeActive) {
+            void vscode.commands.executeCommand("workbench.action.closeActiveEditor");
           }
         }
         if (editor.document.languageId === "markdown" || editor.document.uri.fsPath.toLowerCase().endsWith(".md")) {

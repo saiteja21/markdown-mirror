@@ -290,6 +290,11 @@
           "default": true,
           "description": "Automatically open the native preview panel when a supported file (.md, .yaml, .json, .xml) is opened in the editor. Disable to only preview files manually."
         },
+        "markdownMirror.previewOnly": {
+          "type": "boolean",
+          "default": true,
+          "description": "When auto-preview is enabled, close the editor tab and show only the preview. Use the Edit button in the preview toolbar to open the editor when needed."
+        },
         "markdownMirror.nativeFollowVsCodeTheme": {
           "type": "boolean",
           "default": true,
