@@ -288,6 +288,10 @@ class NativePreviewManager {
   private static focusModeEnabled = false;
   public static onTargetChanged: ((uri: vscode.Uri | undefined) => void) | undefined;
 
+  public static get hasPanel(): boolean {
+    return !!this.currentPanel;
+  }
+
   public static isSupportedPreviewFile(uri: vscode.Uri): boolean {
     if (uri.scheme !== "file") {
       return false;
@@ -1962,7 +1966,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidChangeActiveTextEditor((editor) => {
       if (editor && editor.document.uri.scheme === "file") {
         if (NativePreviewManager.isSupportedPreviewFile(editor.document.uri)) {
-          NativePreviewManager.updateTarget(editor.document.uri.toString());
+          const autoPreview = vscode.workspace.getConfiguration("markdownMirror").get<boolean>("autoPreview", true);
+          if (NativePreviewManager.hasPanel) {
+            // Panel already exists — just update the target
+            NativePreviewManager.updateTarget(editor.document.uri.toString());
+          } else if (autoPreview) {
+            // Panel doesn't exist — auto-open it if setting is enabled
+            void NativePreviewManager.show(runtime, context, editor.document.uri);
+          }
         }
         if (editor.document.languageId === "markdown" || editor.document.uri.fsPath.toLowerCase().endsWith(".md")) {
           scheduleDiagnostics(editor.document.uri);

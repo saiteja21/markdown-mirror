@@ -285,6 +285,11 @@
           ],
           "description": "Controls where the preview UI is hosted when Markdown Mirror starts."
         },
+        "markdownMirror.autoPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open the native preview panel when a supported file (.md, .yaml, .json, .xml) is opened in the editor. Disable to only preview files manually."
+        },
         "markdownMirror.nativeFollowVsCodeTheme": {
           "type": "boolean",
           "default": true,
