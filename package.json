@@ -285,16 +285,6 @@
           ],
           "description": "Controls where the preview UI is hosted when Markdown Mirror starts."
         },
-        "markdownMirror.autoPreview": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically open the native preview panel when a supported file (.md, .yaml, .json, .xml) is opened in the editor. Disable to only preview files manually."
-        },
-        "markdownMirror.previewOnly": {
-          "type": "boolean",
-          "default": true,
-          "description": "When auto-preview is enabled, close the editor tab and show only the preview. Use the Edit button in the preview toolbar to open the editor when needed."
-        },
         "markdownMirror.nativeFollowVsCodeTheme": {
           "type": "boolean",
           "default": true,
@@ -555,6 +545,21 @@
         }
       }
     },
+    "customEditors": [
+      {
+        "viewType": "markdownMirror.preview",
+        "displayName": "Markdown Mirror Preview",
+        "selector": [
+          { "filenamePattern": "*.md" },
+          { "filenamePattern": "*.yaml" },
+          { "filenamePattern": "*.yml" },
+          { "filenamePattern": "*.json" },
+          { "filenamePattern": "*.jsonc" },
+          { "filenamePattern": "*.xml" }
+        ],
+        "priority": "option"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {

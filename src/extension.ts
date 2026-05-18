@@ -282,27 +282,120 @@ class MirrorRuntime implements vscode.Disposable {
   }
 }
 
-class NativePreviewManager {
-  /** Map of file URI string → webview panel */
-  private static panels = new Map<string, vscode.WebviewPanel>();
-  /** The URI of the most recently focused preview panel */
-  private static activeTargetUri: string | undefined;
-  private static focusModeEnabled = false;
-  public static onTargetChanged: ((uri: vscode.Uri | undefined) => void) | undefined;
-  /** Set to true when Edit button opens editor — prevents auto-close of the editor tab */
-  public static editModeActive = false;
-  private static lastEditTimestamp = 0;
-  /** Guard flag to prevent re-entrant close loops */
-  public static closingEditor = false;
+class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvider {
+  public static readonly viewType = "markdownMirror.preview";
 
-  public static get hasPanel(): boolean {
-    return this.panels.size > 0;
+  /** Track active panel URI for TOC/heading sync */
+  private activeTargetUri: string | undefined;
+  private panels = new Map<string, vscode.WebviewPanel>();
+  private focusModeEnabled = false;
+  public onTargetChanged: ((uri: vscode.Uri | undefined) => void) | undefined;
+
+  constructor(
+    private readonly runtime: MirrorRuntime,
+    private readonly context: vscode.ExtensionContext
+  ) {}
+
+  openCustomDocument(uri: vscode.Uri): vscode.CustomDocument {
+    return { uri, dispose() {} };
   }
 
-  /** Check if a preview panel already exists for the given URI */
-  public static hasPanelForUri(uri: string): boolean {
-    return this.panels.has(uri);
+  async resolveCustomEditor(
+    document: vscode.CustomDocument,
+    webviewPanel: vscode.WebviewPanel
+  ): Promise<void> {
+    const targetUri = document.uri.toString();
+    this.activeTargetUri = targetUri;
+    this.onTargetChanged?.(document.uri);
+
+    let baseUrl = this.runtime.currentBaseUrl;
+    if (!baseUrl) {
+      baseUrl = await this.runtime.start();
+    }
+
+    webviewPanel.webview.options = { enableScripts: true };
+    webviewPanel.webview.html = this.getHtmlForWebview(baseUrl, targetUri);
+
+    this.panels.set(targetUri, webviewPanel);
+
+    // Track which panel is active when it gains focus
+    webviewPanel.onDidChangeViewState((e) => {
+      if (e.webviewPanel.active) {
+        this.activeTargetUri = targetUri;
+        this.onTargetChanged?.(document.uri);
+      }
+    });
+
+    // Handle toolbar commands
+    webviewPanel.webview.onDidReceiveMessage(
+      async (message: { type: string; command?: string; href?: string; action?: string }) => {
+        const panelUri = document.uri;
+
+        if (message.type === "format-markdown" && message.action) {
+          await applyMarkdownFormatting(message.action);
+        } else if (message.type === "run-command" && message.command) {
+          if (message.command === "markdownMirror.editFile") {
+            // Open the file in VS Code's default text editor
+            await vscode.commands.executeCommand("vscode.openWith", panelUri, "default");
+          } else if (message.command === "markdownMirror.openSettings") {
+            await vscode.commands.executeCommand("workbench.action.openSettings", "markdownMirror");
+          } else if (message.command === "markdownMirror.openInBrowser") {
+            const currentBaseUrl = this.runtime.currentBaseUrl ?? await this.runtime.start();
+            const launchUrl = new URL(currentBaseUrl);
+            launchUrl.searchParams.set("mm_theme", getVsCodeThemeKind());
+            launchUrl.searchParams.set("mm_open_uri", panelUri.toString());
+            await vscode.env.openExternal(vscode.Uri.parse(launchUrl.toString()));
+          } else if (message.command === "markdownMirror.printPreview") {
+            try {
+              const rendered = await this.runtime.renderDocumentHtmlForExport(panelUri);
+              const printHtml = buildStandaloneHtml(rendered.title, rendered.html, "print");
+              const printUri = vscode.Uri.joinPath(this.context.globalStorageUri, "print-preview.html");
+              await vscode.workspace.fs.createDirectory(this.context.globalStorageUri);
+              await vscode.workspace.fs.writeFile(printUri, new TextEncoder().encode(printHtml));
+              await vscode.env.openExternal(printUri);
+            } catch (err) {
+              void vscode.window.showErrorMessage(`Print preview failed: ${err instanceof Error ? err.message : "Unknown error"}`);
+            }
+          } else if (message.command === "markdownMirror.showBacklinks") {
+            await vscode.commands.executeCommand("markdownMirror.showBacklinks", panelUri);
+          } else if (message.command === "markdownMirror.exportHtml") {
+            await vscode.commands.executeCommand("markdownMirror.exportHtml", panelUri);
+          } else if (message.command === "markdownMirror.exportToWord") {
+            await vscode.commands.executeCommand("markdownMirror.exportToWord", panelUri);
+          }
+        } else if (message.type === "open-link" && message.href) {
+          const href = message.href;
+          if (/^https?:\/\//i.test(href)) {
+            await vscode.env.openExternal(vscode.Uri.parse(href));
+          } else {
+            const dir = vscode.Uri.joinPath(panelUri, "..");
+            const resolved = vscode.Uri.joinPath(dir, href.split("#")[0]);
+            if (resolved.fsPath.toLowerCase().endsWith(".md") || isDataFile(resolved.fsPath)) {
+              await vscode.commands.executeCommand("vscode.openWith", resolved, MarkdownMirrorEditorProvider.viewType);
+            } else {
+              try {
+                await vscode.workspace.fs.stat(resolved);
+                await vscode.env.openExternal(resolved);
+              } catch {
+                await vscode.env.openExternal(vscode.Uri.parse(href));
+              }
+            }
+          }
+        }
+      }
+    );
+
+    webviewPanel.onDidDispose(() => {
+      this.panels.delete(targetUri);
+      if (this.activeTargetUri === targetUri) {
+        const remaining = Array.from(this.panels.keys());
+        this.activeTargetUri = remaining.length > 0 ? remaining[remaining.length - 1] : undefined;
+        this.onTargetChanged?.(this.getCurrentTargetUri());
+      }
+    });
   }
+
+  // --- Public API for TOC/heading sync ---
 
   public static isSupportedPreviewFile(uri: vscode.Uri): boolean {
     if (uri.scheme !== "file") {
@@ -315,29 +408,10 @@ class NativePreviewManager {
     return dataFilesEnabled && isDataFile(uri.fsPath);
   }
 
-  private static resolvePreviewTarget(uri?: vscode.Uri): string | undefined {
-    if (uri && this.isSupportedPreviewFile(uri)) {
-      return uri.toString();
-    }
-
-    const activeEditor = vscode.window.activeTextEditor;
-    if (!activeEditor) {
-      return undefined;
-    }
-
-    const activeUri = activeEditor.document.uri;
-    if (!this.isSupportedPreviewFile(activeUri)) {
-      return undefined;
-    }
-
-    return activeUri.toString();
-  }
-
-  public static getCurrentTargetUri(): vscode.Uri | undefined {
+  public getCurrentTargetUri(): vscode.Uri | undefined {
     if (!this.activeTargetUri) {
       return undefined;
     }
-
     try {
       return vscode.Uri.parse(this.activeTargetUri);
     } catch {
@@ -345,199 +419,24 @@ class NativePreviewManager {
     }
   }
 
-  public static updateTarget(uri: string): void {
-    // In multi-panel mode, if a panel exists for this URI, reveal it
-    const panel = this.panels.get(uri);
-    if (panel) {
-      this.activeTargetUri = uri;
-      this.onTargetChanged?.(this.getCurrentTargetUri());
-      panel.reveal(vscode.ViewColumn.Beside, true);
-    }
-  }
-
-  public static revealHeadingInPreview(heading: TocHeading): void {
+  public revealHeadingInPreview(heading: TocHeading): void {
     const panel = this.activeTargetUri ? this.panels.get(this.activeTargetUri) : undefined;
     panel?.webview.postMessage({ type: "reveal-heading", heading });
   }
 
-  public static print(): void {
+  public print(): void {
     const panel = this.activeTargetUri ? this.panels.get(this.activeTargetUri) : undefined;
     panel?.webview.postMessage({ type: "print" });
   }
 
-  public static setFocusMode(enabled: boolean): void {
+  public setFocusMode(enabled: boolean): void {
     this.focusModeEnabled = enabled;
-    // Apply to all open panels
     for (const panel of this.panels.values()) {
       panel.webview.postMessage({ type: "toggle-focus-mode", enabled });
     }
   }
 
-  private static lastBaseUrl: string | undefined;
-
-  public static async show(runtime: MirrorRuntime, context: vscode.ExtensionContext, uri?: vscode.Uri): Promise<void> {
-    const targetUri = this.resolvePreviewTarget(uri);
-    if (!targetUri) {
-      return;
-    }
-
-    this.activeTargetUri = targetUri;
-    this.onTargetChanged?.(vscode.Uri.parse(targetUri));
-
-    let baseUrl = runtime.currentBaseUrl;
-    if (!baseUrl) {
-      baseUrl = await runtime.start();
-    }
-
-    // If a panel already exists for this URI, just reveal it
-    const existing = this.panels.get(targetUri);
-    if (existing) {
-      existing.webview.html = this.getHtmlForWebview(baseUrl, targetUri);
-      this.lastBaseUrl = baseUrl;
-      existing.reveal(vscode.ViewColumn.Beside, true);
-      return;
-    }
-
-    this.lastBaseUrl = baseUrl;
-
-    // Derive a short title from the file path
-    const parsedUri = vscode.Uri.parse(targetUri);
-    const fileName = path.basename(parsedUri.fsPath);
-
-    const panel = vscode.window.createWebviewPanel(
-      "markdownMirrorNative",
-      `Preview: ${fileName}`,
-      { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
-      {
-        enableScripts: true,
-        enableFindWidget: true,
-        retainContextWhenHidden: true
-      }
-    );
-
-    this.panels.set(targetUri, panel);
-
-    panel.webview.html = this.getHtmlForWebview(baseUrl, targetUri);
-
-    // Track which panel is active when it gains focus
-    panel.onDidChangeViewState(
-      (e) => {
-        if (e.webviewPanel.active) {
-          this.activeTargetUri = targetUri;
-          this.onTargetChanged?.(vscode.Uri.parse(targetUri));
-        }
-      },
-      null,
-      context.subscriptions
-    );
-
-    panel.webview.onDidReceiveMessage(
-      async (message: { type: string; command?: string; href?: string; action?: string }) => {
-        // Each panel knows its own file URI — use it directly instead of global state
-        const panelUri = targetUri ? vscode.Uri.parse(targetUri) : undefined;
-
-        if (message.type === "format-markdown" && message.action) {
-          await applyMarkdownFormatting(message.action);
-        } else if (message.type === "run-command" && message.command) {
-          if (message.command === "markdownMirror.editFile") {
-            if (panelUri) {
-              NativePreviewManager.editModeActive = true;
-              const editTs = Date.now();
-              NativePreviewManager.lastEditTimestamp = editTs;
-              await vscode.window.showTextDocument(panelUri, { viewColumn: vscode.ViewColumn.One, preview: false });
-              setTimeout(() => {
-                if (NativePreviewManager.lastEditTimestamp === editTs) {
-                  NativePreviewManager.editModeActive = false;
-                }
-              }, 500);
-            } else {
-              void vscode.window.showInformationMessage("No file is currently being previewed.");
-            }
-          } else if (message.command === "markdownMirror.openSettings") {
-            await vscode.commands.executeCommand("workbench.action.openSettings", "markdownMirror");
-          } else if (message.command === "markdownMirror.openInBrowser") {
-            const currentBaseUrl = runtime.currentBaseUrl ?? await runtime.start();
-            const launchUrl = new URL(currentBaseUrl);
-            launchUrl.searchParams.set("mm_theme", getVsCodeThemeKind());
-            if (panelUri) {
-              launchUrl.searchParams.set("mm_open_uri", panelUri.toString());
-            }
-            await vscode.env.openExternal(vscode.Uri.parse(launchUrl.toString()));
-          } else if (message.command === "markdownMirror.printPreview") {
-            if (panelUri) {
-              try {
-                const rendered = await runtime.renderDocumentHtmlForExport(panelUri);
-                const printHtml = buildStandaloneHtml(rendered.title, rendered.html, "print");
-                const printUri = vscode.Uri.joinPath(context.globalStorageUri, "print-preview.html");
-                await vscode.workspace.fs.createDirectory(context.globalStorageUri);
-                await vscode.workspace.fs.writeFile(printUri, new TextEncoder().encode(printHtml));
-                await vscode.env.openExternal(printUri);
-              } catch (err) {
-                void vscode.window.showErrorMessage(`Print preview failed: ${err instanceof Error ? err.message : "Unknown error"}`);
-              }
-            }
-          } else if (message.command === "markdownMirror.showBacklinks") {
-            if (panelUri) {
-              await vscode.commands.executeCommand("markdownMirror.showBacklinks", panelUri);
-            } else {
-              void vscode.window.showInformationMessage("Open a markdown file in preview first.");
-            }
-          } else if (message.command === "markdownMirror.exportHtml") {
-            if (panelUri) {
-              await vscode.commands.executeCommand("markdownMirror.exportHtml", panelUri);
-            }
-          } else if (message.command === "markdownMirror.exportToWord") {
-            if (panelUri) {
-              await vscode.commands.executeCommand("markdownMirror.exportToWord", panelUri);
-            }
-          } else if (message.command === "markdownMirror.findHeading") {
-            if (panelUri) {
-              await vscode.commands.executeCommand("markdownMirror.findHeading", panelUri);
-            }
-          }
-          // No fallthrough — only explicitly handled commands are executed
-        } else if (message.type === "open-link" && message.href) {
-          const href = message.href;
-          if (/^https?:\/\//i.test(href)) {
-            await vscode.env.openExternal(vscode.Uri.parse(href));
-          } else {
-            if (panelUri) {
-              const dir = vscode.Uri.joinPath(panelUri, "..");
-              const resolved = vscode.Uri.joinPath(dir, href.split("#")[0]);
-              if (resolved.fsPath.toLowerCase().endsWith(".md") || isDataFile(resolved.fsPath)) {
-                await vscode.commands.executeCommand("markdownMirror.openInPreview", resolved);
-              } else {
-                try {
-                  await vscode.workspace.fs.stat(resolved);
-                  await vscode.env.openExternal(resolved);
-                } catch {
-                  await vscode.env.openExternal(vscode.Uri.parse(href));
-                }
-              }
-            }
-          }
-        }
-      },
-      undefined,
-      context.subscriptions
-    );
-
-    panel.onDidDispose(
-      () => {
-        this.panels.delete(targetUri);
-        if (this.activeTargetUri === targetUri) {
-          // Set active to the most recent remaining panel, or undefined
-          const remaining = Array.from(this.panels.keys());
-          this.activeTargetUri = remaining.length > 0 ? remaining[remaining.length - 1] : undefined;
-          this.onTargetChanged?.(this.getCurrentTargetUri());
-        }
-      },
-      null,
-      context.subscriptions
-    );
-  }
-
-  private static getHtmlForWebview(baseUrlInput: string, targetUri: string): string {
+  private getHtmlForWebview(baseUrlInput: string, targetUri: string): string {
     const nonce = getNonce();
     const baseUrl = baseUrlInput.replace(/\/$/, "");
     const wsUrl = baseUrl.replace(/^http/, "ws") + "/ws";
@@ -1071,9 +970,22 @@ class NativePreviewManager {
 
 export function activate(context: vscode.ExtensionContext): void {
   const runtime = new MirrorRuntime(context.extensionPath);
+  const editorProvider = new MarkdownMirrorEditorProvider(runtime, context);
   const treeProvider = new MarkdownTreeProvider();
   const tocProvider = new MarkdownTocProvider();
   const settingsProvider = new SettingsTreeProvider();
+
+  // Register as the default custom editor for supported file types
+  context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(
+      MarkdownMirrorEditorProvider.viewType,
+      editorProvider,
+      {
+        webviewOptions: { retainContextWhenHidden: true, enableFindWidget: true },
+        supportsMultipleEditorsPerDocument: false
+      }
+    )
+  );
 
   const treeView = vscode.window.createTreeView("markdownMirror.fileTree", {
     treeDataProvider: treeProvider,
@@ -1117,15 +1029,15 @@ export function activate(context: vscode.ExtensionContext): void {
       : "Open a markdown file in preview to see headings.";
   };
 
-  syncTocTarget(NativePreviewManager.getCurrentTargetUri());
-  NativePreviewManager.onTargetChanged = syncTocTarget;
+  syncTocTarget(editorProvider.getCurrentTargetUri());
+  editorProvider.onTargetChanged = syncTocTarget;
 
   const treeWatcher = vscode.workspace.createFileSystemWatcher("**/*.{md,yaml,yml,json,jsonc,xml}");
   treeWatcher.onDidCreate(() => { treeProvider.refresh(); invalidatePathSetCache(); });
   treeWatcher.onDidDelete(() => { treeProvider.refresh(); invalidatePathSetCache(); });
   treeWatcher.onDidChange((uri) => {
     treeProvider.refresh();
-    const target = NativePreviewManager.getCurrentTargetUri();
+    const target = editorProvider.getCurrentTargetUri();
     if (target?.toString() === uri.toString()) {
       tocProvider.refresh();
     }
@@ -1332,7 +1244,11 @@ export function activate(context: vscode.ExtensionContext): void {
     const hostMode = getHostMode();
 
     if (hostMode === "vscode" || hostMode === "both") {
-      await NativePreviewManager.show(runtime, context);
+      // Custom editor handles file opens — just ensure server is started
+      const activeUri = vscode.window.activeTextEditor?.document.uri;
+      if (activeUri && MarkdownMirrorEditorProvider.isSupportedPreviewFile(activeUri)) {
+        await vscode.commands.executeCommand("vscode.openWith", activeUri, MarkdownMirrorEditorProvider.viewType);
+      }
     }
 
     if ((hostMode === "browser" || hostMode === "both") && await shouldOpenBrowser(manualStart)) {
@@ -1433,7 +1349,10 @@ export function activate(context: vscode.ExtensionContext): void {
       await startRuntime(true);
     }),
     vscode.commands.registerCommand("markdownMirror.openNativePreview", async () => {
-      await NativePreviewManager.show(runtime, context);
+      const activeUri = vscode.window.activeTextEditor?.document.uri;
+      if (activeUri && MarkdownMirrorEditorProvider.isSupportedPreviewFile(activeUri)) {
+        await vscode.commands.executeCommand("vscode.openWith", activeUri, MarkdownMirrorEditorProvider.viewType);
+      }
     }),
     vscode.commands.registerCommand("markdownMirror.openCompareMode", async () => {
       await openBrowserInMode("compare");
@@ -1442,16 +1361,15 @@ export function activate(context: vscode.ExtensionContext): void {
       await openBrowserInMode("slides");
     }),
     vscode.commands.registerCommand("markdownMirror.openInPreview", async (uri: vscode.Uri) => {
-      await NativePreviewManager.show(runtime, context, uri);
+      await vscode.commands.executeCommand("vscode.openWith", uri, MarkdownMirrorEditorProvider.viewType);
     }),
     vscode.commands.registerCommand("markdownMirror.openActiveInPreview", async () => {
       const activeUri = vscode.window.activeTextEditor?.document.uri;
-      if (!activeUri || !NativePreviewManager.isSupportedPreviewFile(activeUri)) {
+      if (!activeUri || !MarkdownMirrorEditorProvider.isSupportedPreviewFile(activeUri)) {
         void vscode.window.showInformationMessage("Open a markdown or data file (.md, .yaml, .json, .xml) in the editor, then run Markdown Mirror: Preview Active File.");
         return;
       }
-
-      await NativePreviewManager.show(runtime, context, activeUri);
+      await vscode.commands.executeCommand("vscode.openWith", activeUri, MarkdownMirrorEditorProvider.viewType);
     }),
     vscode.commands.registerCommand("markdownMirror.runDocumentAudit", async () => {
       const targetUri = resolveTargetMarkdownUri();
@@ -1702,7 +1620,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const current = config.get<string>("nativeUiProfile", "focused");
       const next = current === "focused" ? "classic" : "focused";
       await config.update("nativeUiProfile", next, vscode.ConfigurationTarget.Workspace);
-      NativePreviewManager.setFocusMode(next === "focused");
+      editorProvider.setFocusMode(next === "focused");
       void vscode.window.showInformationMessage(`Markdown Mirror focus mode: ${next}`);
     }),
     vscode.commands.registerCommand("markdownMirror.formatBold", () => applyMarkdownFormatting("bold")),
@@ -1736,8 +1654,8 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
 
-      await NativePreviewManager.show(runtime, context, uri);
-      NativePreviewManager.revealHeadingInPreview(heading);
+      await vscode.commands.executeCommand("vscode.openWith", uri, MarkdownMirrorEditorProvider.viewType);
+      editorProvider.revealHeadingInPreview(heading);
     }),
     vscode.commands.registerCommand("markdownMirror.revealHeadingInEditor", async (heading: TocHeading) => {
       if (!heading?.uri || !heading.line || heading.line < 1) {
@@ -1855,8 +1773,7 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
     vscode.commands.registerCommand("markdownMirror.printPreview", async () => {
-      await NativePreviewManager.show(runtime, context);
-      NativePreviewManager.print();
+      editorProvider.print();
     }),
     vscode.commands.registerCommand("markdownMirror.stop", async () => {
       await runtime.stop();
@@ -2168,52 +2085,11 @@ export function activate(context: vscode.ExtensionContext): void {
       if (!editor || editor.document.uri.scheme !== "file") {
         return;
       }
-
-      // Diagnostics always run, even during editor close operations
+      // Schedule diagnostics for markdown files
       if (editor.document.languageId === "markdown" || editor.document.uri.fsPath.toLowerCase().endsWith(".md")) {
         scheduleDiagnostics(editor.document.uri);
       }
-
-      // Skip preview logic while closing an editor to prevent loops
-      if (NativePreviewManager.closingEditor) {
-        return;
-      }
-
-      if (NativePreviewManager.isSupportedPreviewFile(editor.document.uri)) {
-        const config = vscode.workspace.getConfiguration("markdownMirror");
-        const autoPreview = config.get<boolean>("autoPreview", true);
-        const previewOnly = config.get<boolean>("previewOnly", true);
-        const fileUri = editor.document.uri.toString();
-        const shouldCloseEditor = previewOnly && autoPreview && !NativePreviewManager.editModeActive;
-
-        const closeEditor = (): void => {
-          // Verify the target file is still the active editor before closing
-          if (vscode.window.activeTextEditor?.document.uri.toString() !== fileUri) {
-            return;
-          }
-          NativePreviewManager.closingEditor = true;
-          const safetyTimer = setTimeout(() => { NativePreviewManager.closingEditor = false; }, 2000);
-          vscode.commands.executeCommand("workbench.action.closeActiveEditor").then(
-            () => { clearTimeout(safetyTimer); NativePreviewManager.closingEditor = false; },
-            () => { clearTimeout(safetyTimer); NativePreviewManager.closingEditor = false; }
-          );
-        };
-
-        if (NativePreviewManager.hasPanelForUri(fileUri)) {
-          NativePreviewManager.updateTarget(fileUri);
-          if (shouldCloseEditor) {
-            closeEditor();
-          }
-        } else if (autoPreview) {
-          if (shouldCloseEditor) {
-            void NativePreviewManager.show(runtime, context, editor.document.uri).then(() => {
-              closeEditor();
-            });
-          } else {
-            void NativePreviewManager.show(runtime, context, editor.document.uri);
-          }
-        }
-      }
+      // Custom Editor Provider handles file preview — no hacks needed
     }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration("markdownMirror")) {
@@ -2252,7 +2128,7 @@ function getVsCodeThemeKind(): "light" | "dark" {
 }
 
 function resolveTargetMarkdownUri(): vscode.Uri | undefined {
-  const previewTarget = NativePreviewManager.getCurrentTargetUri();
+  const previewTarget = editorProvider.getCurrentTargetUri();
   if (previewTarget?.scheme === "file" && previewTarget.fsPath.toLowerCase().endsWith(".md")) {
     return previewTarget;
   }
