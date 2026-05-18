@@ -4235,15 +4235,7 @@ document.addEventListener("keydown", function(e) {
     var target = e.target;
     if (!target) { return; }
 
-    // Data tree expand/collapse
-    var node = target.closest(".data-node.data-expandable");
-    if (node && target.closest(".data-key")) {
-      node.classList.toggle("collapsed");
-      e.preventDefault();
-      return;
-    }
-
-    // Data view toggle (tree/source)
+    // Data view toggle (OpenAPI: API/Source)
     if (target.classList.contains("data-view-btn")) {
       var viewer = target.closest(".data-file-viewer");
       if (!viewer) { return; }

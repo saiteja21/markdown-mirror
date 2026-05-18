@@ -55,10 +55,6 @@ export function renderDataFile(content: string, filePath: string): string {
     return renderOpenApiSpec(parsed as Record<string, unknown>, content, fileType, fileName);
   }
 
-  const treeHtml = parseError
-    ? `<div class="data-parse-error">${escapeHtml(parseError)}</div>`
-    : renderTree(parsed, 0, fileType === "xml");
-
   const highlightLang = fileType === "yaml" ? "yaml" : fileType === "xml" ? "xml" : "json";
   let highlightedSource: string;
   if (hljs.getLanguage(highlightLang)) {
@@ -67,82 +63,19 @@ export function renderDataFile(content: string, filePath: string): string {
     highlightedSource = escapeHtml(content);
   }
 
-  const sourceHtml = `<pre class="data-source-code"><code class="hljs language-${highlightLang}">${highlightedSource}</code></pre>`;
+  const errorHtml = parseError
+    ? `<div class="data-parse-error">${escapeHtml(parseError)}</div>`
+    : "";
 
   return `
 <div class="data-file-viewer" data-file-type="${fileType}">
   <div class="data-file-header">
     <span class="data-file-name">${escapeHtml(fileName)}</span>
     <span class="data-file-badge">${fileType.toUpperCase()}</span>
-    <div class="data-view-toggle">
-      <button class="data-view-btn active" data-view="tree" title="Tree View">Tree</button>
-      <button class="data-view-btn" data-view="source" title="Source View">Source</button>
-    </div>
   </div>
-  <div class="data-view-panel data-tree-panel active">${treeHtml}</div>
-  <div class="data-view-panel data-source-panel">${sourceHtml}</div>
+  ${errorHtml}
+  <pre class="data-source-code"><code class="hljs language-${highlightLang}">${highlightedSource}</code></pre>
 </div>`;
-}
-
-function renderTree(value: unknown, depth: number = 0, xmlMode: boolean = false): string {
-  if (value === null || value === undefined) {
-    return `<span class="data-value data-null">null</span>`;
-  }
-
-  if (typeof value === "boolean") {
-    return `<span class="data-value data-boolean">${value}</span>`;
-  }
-
-  if (typeof value === "number") {
-    return `<span class="data-value data-number">${value}</span>`;
-  }
-
-  if (typeof value === "string") {
-    // Long strings get truncated in tree view with a tooltip
-    const display = value.length > 120 ? escapeHtml(value.slice(0, 120)) + "…" : escapeHtml(value);
-    return `<span class="data-value data-string">"${display}"</span>`;
-  }
-
-  if (Array.isArray(value)) {
-    if (value.length === 0) {
-      return `<span class="data-value data-empty">[ ]</span>`;
-    }
-    const items = value.map((item, index) => {
-      const childHtml = renderTree(item, depth + 1, xmlMode);
-      const isExpandable = typeof item === "object" && item !== null;
-      return `<li class="data-node${isExpandable ? " data-expandable" : ""}">
-        <span class="data-key data-index">[${index}]</span>: ${childHtml}
-      </li>`;
-    }).join("");
-    const countLabel = value.length === 1 ? "1 item" : `${value.length} items`;
-    return `<span class="data-bracket">[${countLabel}]</span>
-      <ul class="data-tree-list">${items}</ul>`;
-  }
-
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length === 0) {
-      return `<span class="data-value data-empty">{ }</span>`;
-    }
-    const items = entries.map(([key, val]) => {
-      const childHtml = renderTree(val, depth + 1, xmlMode);
-      const isExpandable = typeof val === "object" && val !== null;
-      const isAttr = xmlMode && key.startsWith("@_");
-      if (isAttr) {
-        return `<li class="data-node data-attr-node">
-          <span class="data-xml-attr">${escapeHtml(key.slice(2))}</span> = <span class="data-value data-string">"${escapeHtml(String(val))}"</span>
-        </li>`;
-      }
-      return `<li class="data-node${isExpandable ? " data-expandable" : ""}">
-        <span class="data-key">${escapeHtml(key)}</span>: ${childHtml}
-      </li>`;
-    }).join("");
-    const countLabel = entries.length === 1 ? "1 property" : `${entries.length} properties`;
-    return `<span class="data-bracket">{${countLabel}}</span>
-      <ul class="data-tree-list">${items}</ul>`;
-  }
-
-  return `<span class="data-value">${escapeHtml(String(value))}</span>`;
 }
 
 function isOpenApiSpec(data: unknown): boolean {
