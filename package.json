@@ -4,7 +4,7 @@
   "description": "Live markdown preview for your workspace — diagrams, math, search, export, quality tools, and instant hot reload in VS Code or browser.",
   "version": "0.7.1",
   "publisher": "ForkedCode",
-  "icon": "logsasao.png",
+  "icon": "logo.png",
   "galleryBanner": {
     "color": "#1f2937",
     "theme": "dark"
