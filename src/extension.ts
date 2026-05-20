@@ -354,6 +354,9 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
     webviewPanel.webview.options = { enableScripts: true };
     webviewPanel.webview.html = this.getHtmlForWebview(baseUrl, targetUri);
 
+    // Pin the tab so single-click doesn't reuse preview tabs
+    setTimeout(() => { void vscode.commands.executeCommand("workbench.action.pinEditor"); }, 100);
+
     this.panels.set(targetUri, webviewPanel);
 
     // Track which panel is active when it gains focus
@@ -568,9 +571,34 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
       tr:nth-child(2n) { background-color: var(--vscode-editor-inactiveSelectionBackground, rgba(0, 0, 0, 0.02)); }
       img { max-width: 100%; box-sizing: content-box; cursor: zoom-in; transition: transform 0.25s ease; }
       img.mm-zoomed { position: relative; z-index: 50; transform: scale(2); cursor: zoom-out; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
-      .mermaid { overflow: auto; margin: 16px 0; }
+      .mermaid { overflow: auto; margin: 16px 0; background: #fff; border-radius: 6px; padding: 8px; }
       .mermaid svg { max-width: 100%; height: auto !important; cursor: zoom-in; display: block; }
       .mermaid svg.mm-zoomed { position: relative; z-index: 50; transform: scale(1.8); cursor: zoom-out; box-shadow: 0 8px 32px rgba(0,0,0,0.3); }
+      /* Mermaid text legibility in dark mode */
+      .vscode-dark .mermaid { background: #1e1e1e; }
+      .vscode-dark .mermaid text, .vscode-dark .mermaid .nodeLabel,
+      .vscode-dark .mermaid .edgeLabel, .vscode-dark .mermaid .label {
+        fill: #c9d1d9 !important; color: #c9d1d9 !important;
+      }
+      .vscode-dark .mermaid .node rect, .vscode-dark .mermaid .node circle,
+      .vscode-dark .mermaid .node polygon { stroke: #484f58 !important; }
+      .vscode-dark .mermaid .edgePath .path { stroke: #6e7681 !important; }
+      .vscode-dark .mermaid .arrowheadPath { fill: #6e7681 !important; }
+      .vscode-dark .mermaid .cluster rect { stroke: #30363d !important; fill: #161b22 !important; }
+
+      /* Dark mode enhancements for other components */
+      .vscode-dark pre { background: #161b22; border: 1px solid #30363d; }
+      .vscode-dark code { color: #c9d1d9; }
+      .vscode-dark pre code { color: #c9d1d9; }
+      .vscode-dark blockquote { border-left-color: #3b434b; color: #8b949e; }
+      .vscode-dark table { border-color: #30363d; }
+      .vscode-dark th { background: #161b22; }
+      .vscode-dark th, .vscode-dark td { border-color: #30363d; }
+      .vscode-dark tr:nth-child(2n) { background: rgba(255,255,255,0.03); }
+      .vscode-dark img { background: transparent; }
+      .vscode-dark h1, .vscode-dark h2 { border-bottom-color: #21262d; }
+      .vscode-dark a { color: #58a6ff; }
+
       #loader { color: var(--vscode-descriptionForeground); text-align: center; padding: 24px; font-style: italic; }
       body.mm-focus-mode { padding: 56px 88px; }
       body.mm-focus-mode #content > :not(h1):not(h2):not(h3):not(p):not(ul):not(ol):not(pre):not(blockquote):not(table):not(img) { opacity: 0.94; }
