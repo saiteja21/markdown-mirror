@@ -305,12 +305,9 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
     document: vscode.CustomDocument,
     webviewPanel: vscode.WebviewPanel
   ): Promise<void> {
-    // Reject non-file URIs (e.g. git: scheme from diff views)
+    // For non-file URIs (e.g. git: scheme from diff views), show raw source
     if (document.uri.scheme !== "file") {
-      webviewPanel.webview.html = `<html><body style="padding:24px;font-family:sans-serif;color:#888">
-        <p>Markdown Mirror preview is only available for local files.</p>
-        <p style="font-size:12px">This document uses the <code>${document.uri.scheme}:</code> scheme which is not supported.</p>
-      </body></html>`;
+      await this.showRawSource(document, webviewPanel);
       return;
     }
 
@@ -319,7 +316,6 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
     const previewFileTypes = config.get<string[]>("previewFileTypes", ["md", "yaml", "yml", "json", "jsonc", "xml"]);
     const ext = path.extname(document.uri.fsPath).toLowerCase().replace(".", "");
     if (!previewFileTypes.includes(ext)) {
-      // File type not enabled — let VS Code fall back to default text editor
       webviewPanel.webview.html = `<html><body style="padding:24px;font-family:sans-serif;color:#888">
         <p>Markdown Mirror preview is disabled for <code>.${ext}</code> files.</p>
         <p style="font-size:12px">To enable, add <code>"${ext}"</code> to the <code>markdownMirror.previewFileTypes</code> setting.<br>
@@ -455,6 +451,51 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
     for (const panel of this.panels.values()) {
       panel.webview.postMessage({ type: "toggle-focus-mode", enabled });
     }
+  }
+
+  /**
+   * Show raw syntax-highlighted source for non-file URIs (git diffs, untitled, etc.)
+   * This gives a readable view of the old file version in diff comparisons.
+   */
+  private async showRawSource(document: vscode.CustomDocument, webviewPanel: vscode.WebviewPanel): Promise<void> {
+    const fileName = path.basename(document.uri.fsPath || "file");
+    let content = "";
+
+    try {
+      const doc = await vscode.workspace.openTextDocument(document.uri);
+      content = doc.getText();
+    } catch {
+      content = `Unable to read content from ${document.uri.scheme}: URI`;
+    }
+
+    // Escape HTML
+    const escaped = content
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+
+    const schemeBadge = document.uri.scheme === "git" ? "Git (Previous Version)" : document.uri.scheme.toUpperCase();
+
+    webviewPanel.webview.options = { enableScripts: false };
+    webviewPanel.webview.html = `<!DOCTYPE html>
+<html><head>
+  <meta charset="UTF-8" />
+  <style>
+    body { margin: 0; padding: 0; background: var(--vscode-editor-background, #fff); color: var(--vscode-editor-foreground, #333); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--vscode-panel-border, #e0e0e0); }
+    .header .name { font-weight: 600; font-size: 14px; }
+    .header .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; background: #6e40c9; color: #fff; }
+    pre { margin: 0; padding: 16px; font-size: 13px; line-height: 1.6; overflow: auto; background: var(--vscode-textCodeBlock-background, #f6f8fa); }
+    code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+  </style>
+</head><body>
+  <div class="header">
+    <span class="name">${fileName}</span>
+    <span class="badge">${schemeBadge}</span>
+  </div>
+  <pre><code>${escaped}</code></pre>
+</body></html>`;
   }
 
   private getHtmlForWebview(baseUrlInput: string, targetUri: string): string {
