@@ -4,7 +4,7 @@
   "description": "Live markdown preview for your workspace — diagrams, math, search, export, quality tools, and instant hot reload in VS Code or browser.",
   "version": "0.7.1",
   "publisher": "ForkedCode",
-  "icon": "logo.png",
+  "icon": "logsasao.png",
   "galleryBanner": {
     "color": "#1f2937",
     "theme": "dark"
@@ -558,14 +558,21 @@
         "viewType": "markdownMirror.preview",
         "displayName": "Markdown Mirror Preview",
         "selector": [
-          { "filenamePattern": "*.md" },
+          { "filenamePattern": "*.md" }
+        ],
+        "priority": "default"
+      },
+      {
+        "viewType": "markdownMirror.preview",
+        "displayName": "Markdown Mirror Preview",
+        "selector": [
           { "filenamePattern": "*.yaml" },
           { "filenamePattern": "*.yml" },
           { "filenamePattern": "*.json" },
           { "filenamePattern": "*.jsonc" },
           { "filenamePattern": "*.xml" }
         ],
-        "priority": "default"
+        "priority": "option"
       }
     ],
     "viewsContainers": {
