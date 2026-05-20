@@ -354,9 +354,6 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
     webviewPanel.webview.options = { enableScripts: true };
     webviewPanel.webview.html = this.getHtmlForWebview(baseUrl, targetUri);
 
-    // Pin the tab so single-click doesn't reuse preview tabs
-    setTimeout(() => { void vscode.commands.executeCommand("workbench.action.pinEditor"); }, 100);
-
     this.panels.set(targetUri, webviewPanel);
 
     // Track which panel is active when it gains focus
