@@ -305,12 +305,32 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
     document: vscode.CustomDocument,
     webviewPanel: vscode.WebviewPanel
   ): Promise<void> {
+    // Reject non-file URIs (e.g. git: scheme from diff views)
+    if (document.uri.scheme !== "file") {
+      webviewPanel.webview.html = `<html><body style="padding:24px;font-family:sans-serif;color:#888">
+        <p>Markdown Mirror preview is only available for local files.</p>
+        <p style="font-size:12px">This document uses the <code>${document.uri.scheme}:</code> scheme which is not supported.</p>
+      </body></html>`;
+      return;
+    }
+
+    // Check if this file type is enabled for preview
+    const config = vscode.workspace.getConfiguration("markdownMirror");
+    const previewFileTypes = config.get<string[]>("previewFileTypes", ["md", "yaml", "yml", "json", "jsonc", "xml"]);
+    const ext = path.extname(document.uri.fsPath).toLowerCase().replace(".", "");
+    if (!previewFileTypes.includes(ext)) {
+      // File type not enabled — let VS Code fall back to default text editor
+      webviewPanel.webview.html = `<html><body style="padding:24px;font-family:sans-serif;color:#888">
+        <p>Markdown Mirror preview is disabled for <code>.${ext}</code> files.</p>
+        <p style="font-size:12px">To enable, add <code>"${ext}"</code> to the <code>markdownMirror.previewFileTypes</code> setting.<br>
+        Or right-click the file → <strong>Open With...</strong> → <strong>Text Editor</strong> to edit normally.</p>
+      </body></html>`;
+      return;
+    }
+
     const targetUri = document.uri.toString();
     this.activeTargetUri = targetUri;
     this.onTargetChanged?.(document.uri);
-
-    // Pin the tab so single-clicking another file opens a new tab instead of replacing
-    void vscode.commands.executeCommand("workbench.action.pinEditor");
 
     let baseUrl = this.runtime.currentBaseUrl;
     if (!baseUrl) {
@@ -1361,8 +1381,6 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand("markdownMirror.openInPreview", async (uri: vscode.Uri) => {
       await vscode.commands.executeCommand("vscode.openWith", uri, MarkdownMirrorEditorProvider.viewType);
-      // Pin the tab so single-clicking another file doesn't replace it
-      await vscode.commands.executeCommand("workbench.action.pinEditor");
     }),
     vscode.commands.registerCommand("markdownMirror.openActiveInPreview", async () => {
       const activeUri = vscode.window.activeTextEditor?.document.uri;

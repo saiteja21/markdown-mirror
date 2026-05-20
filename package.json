@@ -515,6 +515,14 @@
           "default": true,
           "description": "Include YAML and JSON files in the workspace explorer and enable rich preview rendering."
         },
+        "markdownMirror.previewFileTypes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": ["md", "yaml", "yml", "json", "jsonc", "xml"],
+          "description": "File extensions that open in Markdown Mirror preview by default when clicked. Remove an extension to make those files open in the normal text editor instead. To switch for a single file: right-click → Open With... → Text Editor."
+        },
         "markdownMirror.dataFileExtensions": {
           "type": "array",
           "items": {
