@@ -311,6 +311,24 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
       return;
     }
 
+    // Detect diff context: check if another tab exists for the same file path
+    // with a different scheme (e.g. git: side of a diff view)
+    const isDiffContext = vscode.window.tabGroups.all.some(group =>
+      group.tabs.some(tab => {
+        const input = tab.input;
+        if (input && typeof input === "object" && "uri" in input) {
+          const tabUri = (input as { uri: vscode.Uri }).uri;
+          return tabUri.fsPath === document.uri.fsPath && tabUri.scheme !== "file";
+        }
+        return false;
+      })
+    );
+
+    if (isDiffContext) {
+      await this.showRawSource(document, webviewPanel);
+      return;
+    }
+
     // Check if this file type is enabled for preview
     const config = vscode.workspace.getConfiguration("markdownMirror");
     const previewFileTypes = config.get<string[]>("previewFileTypes", ["md", "yaml", "yml", "json", "jsonc", "xml"]);
@@ -475,7 +493,14 @@ class MarkdownMirrorEditorProvider implements vscode.CustomReadonlyEditorProvide
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
 
-    const schemeBadge = document.uri.scheme === "git" ? "Git (Previous Version)" : document.uri.scheme.toUpperCase();
+    let schemeBadge: string;
+    if (document.uri.scheme === "git") {
+      schemeBadge = "Git (Previous Version)";
+    } else if (document.uri.scheme === "file") {
+      schemeBadge = "Working Tree (Current)";
+    } else {
+      schemeBadge = document.uri.scheme.toUpperCase();
+    }
 
     webviewPanel.webview.options = { enableScripts: false };
     webviewPanel.webview.html = `<!DOCTYPE html>
