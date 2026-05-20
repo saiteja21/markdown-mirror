@@ -76,7 +76,10 @@
       {
         "command": "markdownMirror.openActiveInPreview",
         "title": "Markdown Mirror: Preview Active File",
-        "icon": "$(open-preview)"
+        "icon": {
+          "light": "media/icon-preview.svg",
+          "dark": "media/icon-preview.svg"
+        }
       },
       {
         "command": "markdownMirror.refreshFileTree",
