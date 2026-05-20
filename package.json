@@ -624,6 +624,21 @@
           "command": "markdownMirror.openActiveInPreview",
           "group": "navigation",
           "when": "resourceLangId == markdown"
+        },
+        {
+          "command": "markdownMirror.openActiveInPreview",
+          "group": "navigation",
+          "when": "resourceLangId == yaml"
+        },
+        {
+          "command": "markdownMirror.openActiveInPreview",
+          "group": "navigation",
+          "when": "resourceLangId == json || resourceLangId == jsonc"
+        },
+        {
+          "command": "markdownMirror.openActiveInPreview",
+          "group": "navigation",
+          "when": "resourceLangId == xml"
         }
       ],
       "view/title": [
